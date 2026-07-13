@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { auth } from "@/auth";
 import { getOverviewStats, isSetupNeeded } from "@/lib/services/admin";
 import { formatDateLong } from "@/lib/dates";
 import { Card } from "@/components/ui";
@@ -23,6 +25,13 @@ const quickLinks = [
 ];
 
 export default async function AdminOverviewPage() {
+  // The layout has the same guard, but layouts don't re-run on client-side
+  // navigation between admin tabs — a page that renders privileged data
+  // must check on its own.
+  const session = await auth();
+  if (!session?.user?.id) redirect("/login");
+  if (session.user.role !== "ADMIN") redirect("/");
+
   const [stats, setupNeeded] = await Promise.all([
     getOverviewStats(),
     isSetupNeeded(),

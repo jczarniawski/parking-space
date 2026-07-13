@@ -4,7 +4,7 @@
 // the selected day, book/cancel with a confirm step, and (for management
 // members) a release/reclaim banner for their reserved spot on that day.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import type { BoardSpot } from "@/lib/services/bookings";
 import { formatDateHuman, formatDateLong, relativeDayLabel } from "@/lib/dates";
@@ -21,7 +21,12 @@ type Availability = {
   date: string;
   spots: BoardSpot[];
   myBooking: { bookingId: string; spotNumber: string } | null;
-  myReservedSpot: { spotId: string; number: string; released: boolean } | null;
+  myReservedSpot: {
+    spotId: string;
+    number: string;
+    released: boolean;
+    bookedBy: string | null;
+  } | null;
   bookableDates: string[];
 };
 
@@ -69,15 +74,24 @@ function SpotTile({
   spot,
   busy,
   selected,
+  hasBookingToday,
   onPick,
 }: {
   spot: BoardSpot;
   busy: boolean;
   selected: boolean;
+  hasBookingToday: boolean;
   onPick: (spot: BoardSpot) => void;
 }) {
   const mine = spot.status === "booked" && !!spot.bookedByMe;
-  const clickable = spot.status === "available" || mine;
+  // Not clickable: your own released spot (reclaim via the banner instead)
+  // and free spots while you already hold a booking for this day (the server
+  // enforces one spot per person per day).
+  const bookable =
+    spot.status === "available" &&
+    !hasBookingToday &&
+    !(spot.ownedByMe && spot.released);
+  const clickable = bookable || mine;
   const { text, classes } = tileStatus(spot);
 
   return (
@@ -114,20 +128,28 @@ export function BookingBoard({ role }: { role: string }) {
   const [flash, setFlash] = useState<string | null>(null);
   const [pending, setPending] = useState<PendingAction | null>(null);
 
+  const loadSeq = useRef(0);
   const load = useCallback(async (date?: string | null) => {
+    const seq = ++loadSeq.current;
     setRefreshing(true);
     try {
       const url = date
         ? `/api/availability?date=${encodeURIComponent(date)}`
         : "/api/availability";
       const data = await apiFetch<Availability>(url);
+      // A slower earlier response must not overwrite the day the user
+      // actually selected.
+      if (seq !== loadSeq.current) return;
       setBoard(data);
       setSelectedDate(data.date);
     } catch (err) {
+      if (seq !== loadSeq.current) return;
       setError(err instanceof Error ? err.message : "Something went wrong.");
     } finally {
-      setRefreshing(false);
-      setLoading(false);
+      if (seq === loadSeq.current) {
+        setRefreshing(false);
+        setLoading(false);
+      }
     }
   }, []);
 
@@ -310,11 +332,21 @@ export function BookingBoard({ role }: { role: string }) {
         <div className="flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-sm text-amber-900">
             {reserved.released ? (
-              <>
-                You&apos;ve released spot{" "}
-                <span className="font-semibold">{reserved.number}</span> for{" "}
-                {formatDateLong(board.date)} — anyone can book it.
-              </>
+              reserved.bookedBy ? (
+                <>
+                  You&apos;ve released spot{" "}
+                  <span className="font-semibold">{reserved.number}</span> for{" "}
+                  {formatDateLong(board.date)} and{" "}
+                  <span className="font-semibold">{reserved.bookedBy}</span>{" "}
+                  has booked it.
+                </>
+              ) : (
+                <>
+                  You&apos;ve released spot{" "}
+                  <span className="font-semibold">{reserved.number}</span> for{" "}
+                  {formatDateLong(board.date)} — anyone can book it.
+                </>
+              )
             ) : (
               <>
                 Spot <span className="font-semibold">{reserved.number}</span> is
@@ -325,7 +357,12 @@ export function BookingBoard({ role }: { role: string }) {
           {reserved.released ? (
             <Button
               variant="secondary"
-              disabled={busy}
+              disabled={busy || !!reserved.bookedBy}
+              title={
+                reserved.bookedBy
+                  ? "A colleague has already booked it for this day"
+                  : undefined
+              }
               onClick={() =>
                 void runMutation(
                   () =>
@@ -415,6 +452,7 @@ export function BookingBoard({ role }: { role: string }) {
               key={spot.spotId}
               spot={spot}
               busy={busy}
+              hasBookingToday={!!myBooking}
               selected={
                 !!pending &&
                 ((pending.kind === "book" && pending.spotId === spot.spotId) ||

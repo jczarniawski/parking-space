@@ -1,5 +1,5 @@
 import { Prisma } from "@prisma/client";
-import { prisma } from "@/lib/db";
+import { prisma, serializableTx } from "@/lib/db";
 import { logAudit } from "@/lib/audit";
 import { badRequest, conflict, forbidden, notFound } from "@/lib/errors";
 import {
@@ -36,8 +36,14 @@ export type Board = {
   date: ISODate;
   spots: BoardSpot[];
   myBooking: { bookingId: string; spotNumber: string } | null;
-  // set when the viewer owns a spot that is prebooked for them on this date
-  myReservedSpot: { spotId: string; number: string; released: boolean } | null;
+  // set when the viewer owns a spot that is prebooked for them on this date;
+  // bookedBy is the colleague who booked it after a release (blocks reclaim)
+  myReservedSpot: {
+    spotId: string;
+    number: string;
+    released: boolean;
+    bookedBy: string | null;
+  } | null;
 };
 
 function spotNumberSort(a: { number: string }, b: { number: string }): number {
@@ -81,7 +87,12 @@ export async function getBoard(date: ISODate, viewer: SessionUser): Promise<Boar
       isPrebookDay(spot.prebookDays, date) &&
       !isWeekend(date)
     ) {
-      myReservedSpot = { spotId: spot.id, number: spot.number, released };
+      myReservedSpot = {
+        spotId: spot.id,
+        number: spot.number,
+        released,
+        bookedBy: booking ? (booking.user.name ?? booking.user.email) : null,
+      };
     }
 
     const base: BoardSpot = {
@@ -133,10 +144,17 @@ export async function createBooking(
   const spot = await prisma.parkingSpot.findUnique({ where: { id: spotId } });
   if (!spot || !spot.isActive) throw notFound("This parking spot doesn't exist.");
 
-  // Owners don't book their own spot — they reclaim it.
-  if (spot.ownerId === viewer.id) {
+  // On prebook days the owner's spot is either still theirs (nothing to book)
+  // or released (they reclaim instead of booking). On other weekdays the
+  // owner books their own spot like any other free spot.
+  if (spot.ownerId === viewer.id && isPrebookDay(spot.prebookDays, date)) {
+    const released = await prisma.spotRelease.findUnique({
+      where: { spotId_date: { spotId, date } },
+    });
     throw conflict(
-      "This is your reserved spot — use “Reclaim” instead of booking it.",
+      released
+        ? "This is your reserved spot — use “Reclaim” instead of booking it."
+        : "This spot is already reserved for you that day.",
       "OWN_SPOT"
     );
   }
@@ -161,9 +179,10 @@ export async function createBooking(
   }
 
   try {
-    const booking = await prisma.$transaction(async (tx) => {
-      // Re-check inside the transaction: a management spot is only bookable
-      // on its prebook days if the owner's release is still in place.
+    // Serializable: the release read must still hold when the booking row is
+    // written, otherwise a concurrent reclaim could delete the release while
+    // this booking commits (write-skew on READ COMMITTED).
+    const booking = await serializableTx(async (tx) => {
       const freshSpot = await tx.parkingSpot.findUnique({ where: { id: spotId } });
       if (!freshSpot || !freshSpot.isActive) {
         throw notFound("This parking spot doesn't exist.");
@@ -205,6 +224,9 @@ export async function createBooking(
         "SPOT_TAKEN"
       );
     }
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2034") {
+      throw conflict("The parking board is busy — please try again.");
+    }
     throw err;
   }
 }
@@ -229,7 +251,15 @@ export async function cancelBooking(viewer: SessionUser, bookingId: string) {
     throw badRequest("Past bookings can't be cancelled.");
   }
 
-  await prisma.booking.delete({ where: { id: bookingId } });
+  try {
+    await prisma.booking.delete({ where: { id: bookingId } });
+  } catch (err) {
+    // Already cancelled by a concurrent request.
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2025") {
+      throw notFound("Booking not found.");
+    }
+    throw err;
+  }
   await logAudit({
     action: "BOOKING_CANCELLED",
     actorEmail: viewer.email,
@@ -309,24 +339,47 @@ export async function reclaimSpot(viewer: SessionUser, date: ISODate) {
   const today = todayInOfficeTz();
   if (date < today) throw badRequest("You can't reclaim a spot for a past day.");
 
-  await prisma.$transaction(async (tx) => {
-    const release = await tx.spotRelease.findUnique({
-      where: { spotId_date: { spotId: spot.id, date } },
-    });
-    if (!release) throw notFound("Your spot isn't released for that day.");
+  try {
+    // Serializable: pairs with createBooking's transaction so a colleague's
+    // booking and this reclaim can't both succeed for the same spot/day.
+    await serializableTx(async (tx) => {
+      const release = await tx.spotRelease.findUnique({
+        where: { spotId_date: { spotId: spot.id, date } },
+      });
+      if (!release) throw notFound("Your spot isn't released for that day.");
 
-    const booking = await tx.booking.findUnique({
-      where: { spotId_date: { spotId: spot.id, date } },
-      include: { user: { select: { name: true, email: true } } },
+      const booking = await tx.booking.findUnique({
+        where: { spotId_date: { spotId: spot.id, date } },
+        include: { user: { select: { name: true, email: true } } },
+      });
+      if (booking) {
+        throw conflict(
+          `${booking.user.name ?? booking.user.email} has already booked your spot for that day.`,
+          "SPOT_ALREADY_BOOKED"
+        );
+      }
+
+      // Reclaiming while holding a booking elsewhere would give the owner
+      // two spots for the day.
+      const myOtherBooking = await tx.booking.findUnique({
+        where: { userId_date: { userId: viewer.id, date } },
+        include: { spot: { select: { number: true } } },
+      });
+      if (myOtherBooking) {
+        throw conflict(
+          `You already booked spot ${myOtherBooking.spot.number} for that day — cancel it before reclaiming your own spot.`,
+          "HAS_OTHER_BOOKING"
+        );
+      }
+
+      await tx.spotRelease.delete({ where: { id: release.id } });
     });
-    if (booking) {
-      throw conflict(
-        `${booking.user.name ?? booking.user.email} has already booked your spot for that day.`,
-        "SPOT_ALREADY_BOOKED"
-      );
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2034") {
+      throw conflict("The parking board is busy — please try again.");
     }
-    await tx.spotRelease.delete({ where: { id: release.id } });
-  });
+    throw err;
+  }
 
   await logAudit({
     action: "SPOT_RECLAIMED",

@@ -18,6 +18,16 @@ export const BOOKING_HORIZON_BUSINESS_DAYS = 2;
 export const RELEASE_HORIZON_DAYS = 60;
 
 export function officeTimeZone(): string {
+  // In the browser, process.env.OFFICE_TIMEZONE is never inlined (it isn't
+  // NEXT_PUBLIC_-prefixed), so the server-rendered layout exposes the
+  // configured zone as an attribute on <html> instead.
+  if (typeof document !== "undefined") {
+    return (
+      document.documentElement.dataset.officeTz ||
+      process.env.OFFICE_TIMEZONE ||
+      "Europe/Warsaw"
+    );
+  }
   return process.env.OFFICE_TIMEZONE || "Europe/Warsaw";
 }
 

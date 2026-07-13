@@ -26,8 +26,8 @@ export const PATCH = handleApi(
     }
     if (Object.keys(patch).length === 0) throw badRequest("Nothing to update.");
 
-    const spot = await updateSpot(admin, id, patch);
-    return NextResponse.json({ spot });
+    const result = await updateSpot(admin, id, patch);
+    return NextResponse.json(result);
   }
 );
 

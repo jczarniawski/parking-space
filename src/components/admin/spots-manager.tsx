@@ -224,9 +224,17 @@ export function SpotsManager() {
                       <Button
                         variant="secondary"
                         disabled={busy}
-                        onClick={() =>
-                          void patchSpot(spot.id, { isActive: !spot.isActive })
-                        }
+                        onClick={() => {
+                          if (
+                            spot.isActive &&
+                            !window.confirm(
+                              `Deactivate spot ${spot.number}? All upcoming bookings on it will be cancelled.`
+                            )
+                          ) {
+                            return;
+                          }
+                          void patchSpot(spot.id, { isActive: !spot.isActive });
+                        }}
                       >
                         {spot.isActive ? "Deactivate" : "Activate"}
                       </Button>

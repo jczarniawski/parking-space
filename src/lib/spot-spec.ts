@@ -15,6 +15,11 @@ export function parseSpotSpec(spec: string): string[] {
     if (range) {
       const from = parseInt(range[1], 10);
       const to = parseInt(range[2], 10);
+      // Bound the endpoints before iterating — above Number.MAX_SAFE_INTEGER
+      // `n++` no longer changes the value and the loop would never end.
+      if (from > 100000 || to > 100000) {
+        throw badRequest(`Range "${token}" is out of bounds (max 100000).`);
+      }
       if (to < from) throw badRequest(`Invalid range "${token}".`);
       if (to - from > 500) throw badRequest(`Range "${token}" is too large.`);
       for (let n = from; n <= to; n++) {

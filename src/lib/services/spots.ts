@@ -1,7 +1,7 @@
-import { prisma } from "@/lib/db";
+import { prisma, serializableTx } from "@/lib/db";
 import { logAudit } from "@/lib/audit";
 import { badRequest, conflict, notFound } from "@/lib/errors";
-import { parsePrebookDays } from "@/lib/dates";
+import { isPrebookDay, parsePrebookDays, todayInOfficeTz } from "@/lib/dates";
 import { parseSpotSpec } from "@/lib/spot-spec";
 import type { SessionUser } from "@/lib/api-helpers";
 
@@ -110,19 +110,82 @@ export async function updateSpot(
           details: "EMPLOYEE → MANAGEMENT (assigned a reserved spot)",
         });
       }
-      const otherOwned = await prisma.parkingSpot.findFirst({
-        where: { ownerId: owner.id, id: { not: spotId } },
-      });
-      if (otherOwned) {
-        throw conflict(
-          `${email} already owns spot ${otherOwned.number}. Unassign it first.`
-        );
-      }
       data.ownerId = owner.id;
     }
   }
 
-  const updated = await prisma.parkingSpot.update({ where: { id: spotId }, data });
+  const today = todayInOfficeTz();
+  const { updated, cancelled } = await serializableTx(async (tx) => {
+    const fresh = await tx.parkingSpot.findUnique({ where: { id: spotId } });
+    if (!fresh) throw notFound("Spot not found.");
+
+    // One reserved spot per owner (checked in the same transaction as the
+    // write so concurrent assignments can't slip through).
+    if (data.ownerId) {
+      const otherOwned = await tx.parkingSpot.findFirst({
+        where: { ownerId: data.ownerId, id: { not: spotId } },
+      });
+      if (otherOwned) {
+        throw conflict(
+          `That user already owns spot ${otherOwned.number}. Unassign it first.`
+        );
+      }
+    }
+
+    // Making a spot reserved (or extending its prebook days) must not
+    // silently trump colleagues' existing bookings — the admin has to cancel
+    // those first, so the affected people find out.
+    const effectiveOwnerId =
+      data.ownerId !== undefined ? data.ownerId : fresh.ownerId;
+    const effectivePrebookDays = data.prebookDays ?? fresh.prebookDays;
+    if (
+      effectiveOwnerId &&
+      (data.ownerId !== undefined || data.prebookDays !== undefined)
+    ) {
+      const futureBookings = await tx.booking.findMany({
+        where: { spotId, date: { gte: today }, userId: { not: effectiveOwnerId } },
+        include: { user: { select: { email: true } } },
+      });
+      const conflicting = futureBookings.filter((b) =>
+        isPrebookDay(effectivePrebookDays, b.date)
+      );
+      if (conflicting.length > 0) {
+        throw conflict(
+          `Spot ${fresh.number} has upcoming bookings on prebooked days (${conflicting
+            .map((b) => `${b.date} by ${b.user.email}`)
+            .join(", ")}). Cancel them first.`,
+          "HAS_UPCOMING_BOOKINGS"
+        );
+      }
+    }
+
+    // Deactivating removes the spot from the board, so upcoming bookings on
+    // it would silently strand their holders — cancel them here instead.
+    let cancelled: { date: string; email: string }[] = [];
+    if (data.isActive === false && fresh.isActive) {
+      const upcoming = await tx.booking.findMany({
+        where: { spotId, date: { gte: today } },
+        include: { user: { select: { email: true } } },
+      });
+      cancelled = upcoming.map((b) => ({ date: b.date, email: b.user.email }));
+      await tx.booking.deleteMany({ where: { spotId, date: { gte: today } } });
+      await tx.spotRelease.deleteMany({ where: { spotId, date: { gte: today } } });
+    }
+
+    const updated = await tx.parkingSpot.update({ where: { id: spotId }, data });
+    return { updated, cancelled };
+  });
+
+  for (const c of cancelled) {
+    await logAudit({
+      action: "BOOKING_CANCELLED",
+      actorEmail: admin.email,
+      targetEmail: c.email,
+      spotNumber: spot.number,
+      date: c.date,
+      details: "Spot deactivated",
+    });
+  }
   await logAudit({
     action: "SPOT_UPDATED",
     actorEmail: admin.email,
@@ -133,22 +196,25 @@ export async function updateSpot(
       ...(patch.ownerEmail !== undefined ? { owner: patch.ownerEmail } : {}),
     }),
   });
-  return updated;
+  return { spot: updated, cancelledBookings: cancelled.length };
 }
 
 export async function deleteSpot(admin: SessionUser, spotId: string) {
-  const spot = await prisma.parkingSpot.findUnique({
-    where: { id: spotId },
-    include: { _count: { select: { bookings: true } } },
+  const spot = await serializableTx(async (tx) => {
+    const fresh = await tx.parkingSpot.findUnique({
+      where: { id: spotId },
+      include: { _count: { select: { bookings: true } } },
+    });
+    if (!fresh) throw notFound("Spot not found.");
+    if (fresh._count.bookings > 0) {
+      throw conflict(
+        "This spot has booking history. Deactivate it instead of deleting.",
+        "HAS_HISTORY"
+      );
+    }
+    await tx.parkingSpot.delete({ where: { id: spotId } });
+    return fresh;
   });
-  if (!spot) throw notFound("Spot not found.");
-  if (spot._count.bookings > 0) {
-    throw conflict(
-      "This spot has booking history. Deactivate it instead of deleting.",
-      "HAS_HISTORY"
-    );
-  }
-  await prisma.parkingSpot.delete({ where: { id: spotId } });
   await logAudit({
     action: "SPOT_DELETED",
     actorEmail: admin.email,

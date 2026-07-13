@@ -1,7 +1,7 @@
 import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
 import Credentials from "next-auth/providers/credentials";
-import { prisma } from "@/lib/db";
+import { prisma, serializableTx } from "@/lib/db";
 
 export const ALLOWED_DOMAIN = (
   process.env.ALLOWED_EMAIL_DOMAIN || "match-trade.com"
@@ -46,11 +46,19 @@ async function upsertUser(email: string, name?: string | null, image?: string | 
     });
   }
 
-  const userCount = await prisma.user.count();
-  const role =
-    userCount === 0 || adminEmails().includes(normalized) ? "ADMIN" : "EMPLOYEE";
-  return prisma.user.create({
-    data: { email: normalized, name: name ?? null, image: image ?? null, role },
+  // Serializable so two concurrent first sign-ins can't both see count===0
+  // and both bootstrap themselves as ADMIN.
+  return serializableTx(async (tx) => {
+    const raced = await tx.user.findUnique({ where: { email: normalized } });
+    if (raced) return raced;
+    const userCount = await tx.user.count();
+    const role =
+      userCount === 0 || adminEmails().includes(normalized)
+        ? "ADMIN"
+        : "EMPLOYEE";
+    return tx.user.create({
+      data: { email: normalized, name: name ?? null, image: image ?? null, role },
+    });
   });
 }
 

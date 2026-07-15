@@ -11,3 +11,11 @@
     @apply bg-slate-50 text-slate-900 antialiased;
   }
 }
+
+@layer utilities {
+  /* Extra bottom padding for devices with a home-indicator / notch area,
+     used by the fixed bottom navigation bar. */
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}

@@ -13,7 +13,7 @@ export default async function MyBookingsPage() {
   if (!session?.user?.id) redirect("/login");
 
   return (
-    <div className="space-y-6">
+    <div className="mx-auto w-full max-w-md space-y-5">
       <h1 className="text-xl font-semibold text-slate-900">My bookings</h1>
       {/* Renders nothing for users without a reserved spot. */}
       <ReleasesPanel />

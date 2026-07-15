@@ -1,8 +1,9 @@
 "use client";
 
-// Employee dashboard: date chips for the bookable window, the spot grid for
-// the selected day, book/cancel with a confirm step, and (for management
-// members) a release/reclaim banner for their reserved spot on that day.
+// The parking board: zone tabs + date chips for the bookable window, the spot
+// grid for the selected day, book/cancel with a confirm step (with a vehicle
+// picker), and (for management members) a release/reclaim banner for their
+// reserved spot on that day.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
@@ -17,6 +18,10 @@ import {
   cn,
 } from "@/components/ui";
 
+type Zone = { id: string; name: string; spotCount: number };
+
+type Vehicle = { id: string; plate: string };
+
 type Availability = {
   date: string;
   spots: BoardSpot[];
@@ -28,6 +33,8 @@ type Availability = {
     bookedBy: string | null;
   } | null;
   bookableDates: string[];
+  zones: Zone[];
+  zoneId: string | null;
 };
 
 type PendingAction =
@@ -39,6 +46,8 @@ function firstName(fullName: string): string {
   return beforeAt.trim().split(/\s+/)[0] || fullName;
 }
 
+// Reserved spots deliberately render exactly like booked ones — to everyone
+// but the owner they're simply taken, and the owner acts via the banner.
 function tileStatus(spot: BoardSpot): { text: string; classes: string } {
   if (spot.status === "booked") {
     if (spot.bookedByMe) {
@@ -48,20 +57,18 @@ function tileStatus(spot: BoardSpot): { text: string; classes: string } {
       };
     }
     return {
-      text: spot.bookedByName ? firstName(spot.bookedByName) : "Booked",
+      text: spot.bookedByName ? firstName(spot.bookedByName) : "Taken",
       classes: "border-rose-200 bg-rose-50 text-rose-700",
     };
   }
   if (spot.status === "reserved") {
-    if (spot.ownedByMe) {
-      return {
-        text: "Yours • reserved",
-        classes: "border-amber-300 bg-amber-50 text-amber-800",
-      };
-    }
     return {
-      text: spot.ownerName ? `Reserved • ${firstName(spot.ownerName)}` : "Reserved",
-      classes: "border-amber-200 bg-amber-50 text-amber-800",
+      text: spot.ownedByMe
+        ? "Yours"
+        : spot.ownerName
+          ? firstName(spot.ownerName)
+          : "Taken",
+      classes: "border-rose-200 bg-rose-50 text-rose-700",
     };
   }
   return {
@@ -121,6 +128,9 @@ function SpotTile({
 export function BookingBoard({ role }: { role: string }) {
   const [board, setBoard] = useState<Availability | null>(null);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  // null = "all spots" (used only when no zones exist); the first response
+  // picks the default zone.
+  const [selectedZone, setSelectedZone] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -128,34 +138,78 @@ export function BookingBoard({ role }: { role: string }) {
   const [flash, setFlash] = useState<string | null>(null);
   const [pending, setPending] = useState<PendingAction | null>(null);
 
+  // Vehicle picker for the booking confirm step.
+  const [vehicles, setVehicles] = useState<Vehicle[] | null>(null);
+  const [vehicleId, setVehicleId] = useState("");
+  const [newPlate, setNewPlate] = useState("");
+  const [savingPlate, setSavingPlate] = useState(false);
+  const [plateError, setPlateError] = useState<string | null>(null);
+
   const loadSeq = useRef(0);
-  const load = useCallback(async (date?: string | null) => {
-    const seq = ++loadSeq.current;
-    setRefreshing(true);
-    try {
-      const url = date
-        ? `/api/availability?date=${encodeURIComponent(date)}`
-        : "/api/availability";
-      const data = await apiFetch<Availability>(url);
-      // A slower earlier response must not overwrite the day the user
-      // actually selected.
-      if (seq !== loadSeq.current) return;
-      setBoard(data);
-      setSelectedDate(data.date);
-    } catch (err) {
-      if (seq !== loadSeq.current) return;
-      setError(err instanceof Error ? err.message : "Something went wrong.");
-    } finally {
-      if (seq === loadSeq.current) {
-        setRefreshing(false);
-        setLoading(false);
+  // `zone === undefined` marks the bootstrap request: it fetches without a
+  // zone filter, then re-requests scoped to the first zone (when zones exist)
+  // so the grid only ever shows one zone at a time.
+  const load = useCallback(
+    async (date?: string | null, zone?: string | null) => {
+      const seq = ++loadSeq.current;
+      setRefreshing(true);
+      try {
+        const params = new URLSearchParams();
+        if (date) params.set("date", date);
+        if (zone) params.set("zone", zone);
+        const qs = params.toString();
+        let data = await apiFetch<Availability>(
+          `/api/availability${qs ? `?${qs}` : ""}`
+        );
+        // A slower earlier response must not overwrite the day/zone the user
+        // actually selected.
+        if (seq !== loadSeq.current) return;
+        if (zone === undefined && data.zones.length > 0) {
+          const defaultZone = data.zones[0].id;
+          setSelectedZone(defaultZone);
+          data = await apiFetch<Availability>(
+            `/api/availability?date=${encodeURIComponent(data.date)}&zone=${encodeURIComponent(defaultZone)}`
+          );
+          if (seq !== loadSeq.current) return;
+        }
+        setBoard(data);
+        setSelectedDate(data.date);
+      } catch (err) {
+        if (seq !== loadSeq.current) return;
+        setError(err instanceof Error ? err.message : "Something went wrong.");
+      } finally {
+        if (seq === loadSeq.current) {
+          setRefreshing(false);
+          setLoading(false);
+        }
       }
-    }
-  }, []);
+    },
+    []
+  );
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Fetch the user's saved plates once; preselect the first one.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await apiFetch<{ vehicles: Vehicle[] }>("/api/vehicles");
+        if (cancelled) return;
+        setVehicles(data.vehicles);
+        if (data.vehicles.length > 0) {
+          setVehicleId((current) => current || data.vehicles[0].id);
+        }
+      } catch {
+        if (!cancelled) setVehicles([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Auto-dismiss notices.
   useEffect(() => {
@@ -173,7 +227,14 @@ export function BookingBoard({ role }: { role: string }) {
     if (date === selectedDate || busy) return;
     setPending(null);
     setSelectedDate(date);
-    void load(date);
+    void load(date, selectedZone);
+  }
+
+  function selectZone(zoneId: string) {
+    if (zoneId === selectedZone || busy) return;
+    setPending(null);
+    setSelectedZone(zoneId);
+    void load(selectedDate, zoneId);
   }
 
   async function runMutation(fn: () => Promise<unknown>, successMessage: string) {
@@ -188,7 +249,29 @@ export function BookingBoard({ role }: { role: string }) {
     } finally {
       setPending(null);
       setBusy(false);
-      await load(selectedDate);
+      await load(selectedDate, selectedZone);
+    }
+  }
+
+  async function savePlate() {
+    const plate = newPlate.trim();
+    if (!plate) return;
+    setSavingPlate(true);
+    setPlateError(null);
+    try {
+      const data = await apiFetch<{ vehicle: Vehicle }>("/api/vehicles", {
+        method: "POST",
+        body: JSON.stringify({ plate }),
+      });
+      setVehicles((prev) => [...(prev ?? []), data.vehicle]);
+      setVehicleId(data.vehicle.id);
+      setNewPlate("");
+    } catch (err) {
+      setPlateError(
+        err instanceof Error ? err.message : "Couldn't save the plate."
+      );
+    } finally {
+      setSavingPlate(false);
     }
   }
 
@@ -208,12 +291,14 @@ export function BookingBoard({ role }: { role: string }) {
     if (!pending || !board) return;
     const date = board.date;
     if (pending.kind === "book") {
+      if (!vehicleId) return;
       const { spotId, number } = pending;
+      const chosenVehicleId = vehicleId;
       void runMutation(
         () =>
           apiFetch("/api/bookings", {
             method: "POST",
-            body: JSON.stringify({ spotId, date }),
+            body: JSON.stringify({ spotId, date, vehicleId: chosenVehicleId }),
           }),
         `Spot ${number} booked for ${formatDateHuman(date)}.`
       );
@@ -246,7 +331,7 @@ export function BookingBoard({ role }: { role: string }) {
             variant="secondary"
             onClick={() => {
               setLoading(true);
-              void load(selectedDate);
+              void load(selectedDate, selectedZone);
             }}
           >
             Try again
@@ -261,6 +346,31 @@ export function BookingBoard({ role }: { role: string }) {
 
   return (
     <div className="space-y-4">
+      {/* Zone tabs */}
+      {board.zones.length > 0 ? (
+        <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1">
+          {board.zones.map((zone) => {
+            const active = zone.id === selectedZone;
+            return (
+              <button
+                key={zone.id}
+                type="button"
+                onClick={() => selectZone(zone.id)}
+                aria-pressed={active}
+                className={cn(
+                  "min-h-[44px] shrink-0 rounded-full px-4 py-2 text-sm font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600",
+                  active
+                    ? "bg-brand-700 text-white"
+                    : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                )}
+              >
+                {zone.name}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+
       {/* Date chips */}
       <div className="flex flex-wrap items-center gap-2">
         {board.bookableDates.map((date) => {
@@ -271,10 +381,10 @@ export function BookingBoard({ role }: { role: string }) {
               type="button"
               onClick={() => selectDate(date)}
               className={cn(
-                "rounded-full border px-4 py-2 text-sm font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600",
+                "min-h-[44px] rounded-full px-4 py-2 text-sm font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600",
                 active
-                  ? "border-brand-600 bg-brand-600 text-white"
-                  : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                  ? "bg-brand-700 text-white"
+                  : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
               )}
             >
               {relativeDayLabel(date)}
@@ -289,7 +399,7 @@ export function BookingBoard({ role }: { role: string }) {
       {error ? (
         <div
           role="alert"
-          className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+          className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
         >
           {error}
         </div>
@@ -297,7 +407,7 @@ export function BookingBoard({ role }: { role: string }) {
       {flash ? (
         <div
           role="status"
-          className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700"
+          className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700"
         >
           {flash}
         </div>
@@ -305,7 +415,7 @@ export function BookingBoard({ role }: { role: string }) {
 
       {/* My booking banner */}
       {myBooking ? (
-        <div className="flex flex-col gap-3 rounded-xl border border-brand-200 bg-brand-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-3 rounded-2xl border border-brand-200 bg-brand-50 p-4">
           <p className="text-sm text-brand-900">
             You have spot{" "}
             <span className="font-semibold">{myBooking.spotNumber}</span> booked
@@ -329,8 +439,8 @@ export function BookingBoard({ role }: { role: string }) {
 
       {/* Management reserved-spot banner for the selected day */}
       {reserved ? (
-        <div className="flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm text-amber-900">
+        <div className="flex flex-col gap-3 rounded-2xl border border-brand-200 bg-brand-50 p-4">
+          <p className="text-sm text-brand-900">
             {reserved.released ? (
               reserved.bookedBy ? (
                 <>
@@ -399,7 +509,7 @@ export function BookingBoard({ role }: { role: string }) {
 
       {/* Confirm step */}
       {pending ? (
-        <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+        <div className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-card">
           <p className="text-sm text-slate-700">
             {pending.kind === "book" ? (
               <>
@@ -414,10 +524,69 @@ export function BookingBoard({ role }: { role: string }) {
               </>
             )}
           </p>
+
+          {/* Vehicle picker — a booking always needs a plate */}
+          {pending.kind === "book" ? (
+            vehicles === null ? (
+              <div className="flex items-center gap-2 text-sm text-slate-500">
+                <Spinner className="h-4 w-4" /> Loading your vehicles…
+              </div>
+            ) : vehicles.length === 0 ? (
+              <div>
+                <label
+                  htmlFor="board-new-plate"
+                  className="mb-1 block text-sm font-medium text-slate-700"
+                >
+                  Add your registration plate
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    id="board-new-plate"
+                    type="text"
+                    value={newPlate}
+                    maxLength={12}
+                    placeholder="e.g. PY 1075E"
+                    onChange={(e) => setNewPlate(e.target.value.toUpperCase())}
+                    className="min-h-[44px] w-full min-w-0 flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm uppercase text-slate-800 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-200"
+                  />
+                  <Button
+                    variant="secondary"
+                    className="min-h-[44px] shrink-0"
+                    disabled={savingPlate || !newPlate.trim()}
+                    onClick={() => void savePlate()}
+                  >
+                    {savingPlate ? "Saving…" : "Save"}
+                  </Button>
+                </div>
+                {plateError ? (
+                  <p className="mt-1.5 text-sm text-red-600">{plateError}</p>
+                ) : null}
+              </div>
+            ) : (
+              <label className="block">
+                <span className="mb-1 block text-sm font-medium text-slate-700">
+                  Vehicle
+                </span>
+                <select
+                  value={vehicleId}
+                  onChange={(e) => setVehicleId(e.target.value)}
+                  className="min-h-[44px] w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-200"
+                >
+                  {vehicles.map((v) => (
+                    <option key={v.id} value={v.id}>
+                      {v.plate}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )
+          ) : null}
+
           <div className="flex gap-2">
             <Button
               variant={pending.kind === "book" ? "primary" : "danger"}
-              disabled={busy}
+              className="min-h-[44px]"
+              disabled={busy || (pending.kind === "book" && !vehicleId)}
               onClick={confirmPending}
             >
               {busy
@@ -428,6 +597,7 @@ export function BookingBoard({ role }: { role: string }) {
             </Button>
             <Button
               variant="ghost"
+              className="min-h-[44px]"
               disabled={busy}
               onClick={() => setPending(null)}
             >
@@ -442,11 +612,15 @@ export function BookingBoard({ role }: { role: string }) {
         <Card>
           <EmptyState
             title="No active parking spots"
-            hint="An administrator hasn't added any spots yet."
+            hint={
+              board.zones.length > 0
+                ? "This zone has no spots yet — try another one."
+                : "An administrator hasn't added any spots yet."
+            }
           />
         </Card>
       ) : (
-        <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 sm:gap-3 md:grid-cols-6 lg:grid-cols-8">
+        <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 sm:gap-3">
           {board.spots.map((spot) => (
             <SpotTile
               key={spot.spotId}
@@ -473,11 +647,7 @@ export function BookingBoard({ role }: { role: string }) {
         </span>
         <span className="inline-flex items-center gap-1.5">
           <span className="h-2.5 w-2.5 rounded-full bg-rose-400" />
-          Booked
-        </span>
-        <span className="inline-flex items-center gap-1.5">
-          <span className="h-2.5 w-2.5 rounded-full bg-amber-400" />
-          Reserved
+          Taken
         </span>
         <span className="inline-flex items-center gap-1.5">
           <span className="h-2.5 w-2.5 rounded-full bg-brand-500" />
@@ -492,7 +662,7 @@ export function BookingBoard({ role }: { role: string }) {
             href="/my-bookings"
             className="font-medium text-brand-600 hover:underline"
           >
-            My bookings
+            Bookings
           </Link>
           .
         </p>

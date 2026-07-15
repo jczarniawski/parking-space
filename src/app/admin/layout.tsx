@@ -21,7 +21,9 @@ export default async function AdminLayout({
   if (session.user.role !== "ADMIN") redirect("/");
 
   return (
-    <div className="space-y-6">
+    // The root layout's <main> has no max-width — admin keeps the wide
+    // table-friendly column while regular pages use max-w-md.
+    <div className="mx-auto w-full max-w-5xl space-y-6">
       <div>
         <h1 className="text-xl font-semibold text-slate-900">Admin</h1>
         <nav

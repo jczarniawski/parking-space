@@ -15,7 +15,8 @@ export const POST = handleApi(async (req: NextRequest) => {
   const admin = await requireAdmin();
   const body = await req.json().catch(() => null);
   const spec = typeof body?.spec === "string" ? body.spec : "";
+  const zoneId = typeof body?.zoneId === "string" ? body.zoneId : null;
   if (!spec.trim()) throw badRequest("Provide spot numbers, e.g. \"1-10, 12\".");
-  const result = await createSpots(admin, spec);
+  const result = await createSpots(admin, spec, zoneId);
   return NextResponse.json(result, { status: 201 });
 });

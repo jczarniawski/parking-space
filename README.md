@@ -1,27 +1,53 @@
 # MT Parking — office parking booking
 
 A small web app for booking office parking spots at Match-Trade. Employees
-grab a free spot for today or the next two business days; management members
-have personally reserved spots they can release for days they won't need
-them; admins configure everything and see the full history.
+quick-book a spot (auto-assigned) or pick one on the board for today or the
+next two business days; management members have personally reserved spots they
+can release for days they won't need them; admins configure everything and see
+the full history.
 
 Sign-in is restricted to `@match-trade.com` Google accounts.
 
 ## Features
 
-- **Availability board** — a per-day grid of all active spots showing who
-  booked what, with one-tap booking and cancellation.
+- **Quick booking** — the central "+" button starts a 3-step wizard: pick a
+  zone, day and car, and the server auto-assigns the lowest free spot number.
+  No spot hunting needed.
+- **Parking zones** — spots can be grouped into zones (e.g. *Underground* /
+  *Ground level*). Everywhere spots are involved — quick booking and the
+  board — users pick a zone first; with no zones defined the pickers disappear
+  and all spots are shown together.
+- **Vehicles / plates** — every booking is tied to one of the user's saved
+  registration plates (up to 5, managed on the Profile page), so reception
+  always knows whose car is where. Booking flows include an inline "add plate"
+  input for first-time users.
+- **Availability board** — a per-day, per-zone grid of all active spots
+  showing who booked what, with one-tap booking and cancellation for people
+  who want a specific spot.
 - **Booking window** — today plus the next 2 business days; weekends are
   never bookable. One spot per person per day, enforced by the database.
 - **Reserved (management) spots** — auto-prebooked for their owner on
   configured weekdays. Owners can release a day (making the spot bookable by
   anyone) up to 60 days ahead, and reclaim it while nobody has booked it.
-- **Admin area** — first-run setup wizard, spot management
-  (activate/deactivate, assign owners and prebook weekdays), user role
-  management, all bookings with filters and CSV export, and an audit log of
-  every action.
-- **Mobile-first PWA** — works well at phone widths and can be added to the
-  home screen as an app.
+  Reserved spots render exactly like booked ones on the board — colleagues
+  just see the owner's name, no special "reserved" state to learn.
+- **Admin area** — first-run setup wizard (zones → spots per zone →
+  management assignments), zone management (add/rename/delete-when-empty),
+  spot management (zone assignment, activate/deactivate, owners and prebook
+  weekdays), user role management, all bookings with zone + plate columns,
+  filters and CSV export, and an audit log of every action.
+- **Mobile-app UI + PWA** — the app is designed as a phone screen first:
+  fixed bottom navigation with a central quick-book button, card-based
+  screens, and the same centered phone-width column even on desktop (admin
+  pages stay wide for tables). Installable via Add to Home Screen.
+
+## Branding
+
+The whole UI derives from two Tailwind color scales in `tailwind.config.ts`:
+`brand` (deep navy — headers, nav, primary surfaces) and `accent` (crimson —
+the FAB and primary actions). Swap those hex scales, plus the logo at
+`public/logo.svg` and the favicon/PWA icon at `src/app/icon.svg`, to rebrand
+the app.
 
 ## Stack
 
@@ -44,6 +70,11 @@ npm install        # also runs `prisma generate`
 npm run db:push    # create the SQLite database (prisma/dev.db)
 npm run dev        # http://localhost:3000
 ```
+
+> **Upgrading from v1?** The schema changed (new `ParkingZone` and `Vehicle`
+> models plus zone/vehicle columns) — run `npm run db:push` again after
+> pulling. For a clean local start, delete `prisma/dev.db` first and let
+> `db:push` recreate it.
 
 With `AUTH_DEV_LOGIN="true"` the login page shows an extra email field: enter
 any `@match-trade.com` address to sign in as that user without Google
@@ -80,19 +111,24 @@ rejected server-side.
 
 1. The **first user ever to sign in becomes an ADMIN** (additionally, any
    email listed in `ADMIN_EMAILS` is promoted to admin on sign-in).
-2. While no parking spots exist, admins landing on the dashboard are
-   redirected to **/admin/setup**: enter the spot numbers (e.g. `1-24` or
-   `1-10, 12, A1`), then optionally assign reserved spots to management
-   members by email and pick their prebook weekdays.
-3. Done — everyone else who signs in can book right away.
+2. While no parking spots exist, admins landing on the app are redirected to
+   **/admin/setup**, a 3-step wizard:
+   1. **Zones** — optionally add parking zones (prefilled suggestions:
+      *Underground*, *Ground level*). Skip if the office has one lot.
+   2. **Spots** — enter spot numbers (e.g. `1-24` or `1-10, 12, A1`) and the
+      zone they belong to; repeat per zone (e.g. `1-10` → Underground, then
+      `11-20` → Ground level).
+   3. **Management** — optionally assign reserved spots to management members
+      by email and pick their prebook weekdays.
+3. Done — everyone else who signs in adds a plate and can book right away.
 
 ## Roles
 
 | Role         | What they can do                                                                                    |
 | ------------ | --------------------------------------------------------------------------------------------------- |
-| `EMPLOYEE`   | Book a free spot within the window, cancel their own upcoming bookings.                              |
+| `EMPLOYEE`   | Book a free spot within the window (quick-book or via the board), cancel their own upcoming bookings. |
 | `MANAGEMENT` | Everything an employee can, plus a personally reserved spot: release it for specific days, reclaim it while unbooked. |
-| `ADMIN`      | Everything above, plus spot/user administration, all bookings + CSV export, audit log.               |
+| `ADMIN`      | Everything above, plus zone/spot/user administration, all bookings + CSV export, audit log.          |
 
 Roles are managed in **Admin → Users**. Assigning a reserved spot to an
 employee automatically promotes them to `MANAGEMENT`; owners assigned by
@@ -105,25 +141,30 @@ first log in.
   (E.g. on Friday you can book Friday, Monday and Tuesday; on Saturday only
   Monday and Tuesday.) "Today" rolls over at midnight in the office timezone
   (`OFFICE_TIMEZONE`, default `Europe/Warsaw`).
+- **Every booking needs a vehicle** — one of the user's saved plates is
+  attached to the booking (and kept as a snapshot even if the vehicle is
+  later deleted).
+- **Quick booking auto-assigns** the lowest free spot number in the chosen
+  zone; if the zone is full the user is pointed at other zones or the board.
 - **One spot per person per day** and one booking per spot per day — enforced
   by database unique constraints, so races resolve safely.
 - Bookings can be cancelled by their owner (or an admin) up to and including
   the booked day; past bookings are kept as history.
-- Reserved spots appear as *Reserved* on their prebook weekdays and can't be
-  booked unless the owner has released that day. Owners release up to
-  60 days ahead and can reclaim a released day only while nobody has booked
-  it. Owners with an active reservation that day must release it before
-  booking a different spot.
+- Reserved spots show their owner's name on the board on prebook weekdays,
+  exactly like booked spots, and can't be booked unless the owner has
+  released that day. Owners release up to 60 days ahead and can reclaim a
+  released day only while nobody has booked it. Owners with an active
+  reservation that day must release it before booking a different spot.
 - Every create/cancel/release/reclaim and all admin actions are written to
   the audit log.
 
 ## Mobile / PWA
 
-The app ships a web manifest (`MT Parking`, standalone display, brand-blue
-theme) and a mobile-first layout tested down to 375 px wide. Open the site on
-your phone and use **Add to Home Screen** (iOS Safari share menu, or the
-install prompt in Chrome on Android) to get an app-like, full-screen
-experience.
+The app ships a web manifest (`MT Parking`, standalone display, navy theme)
+and a phone-first layout: fixed bottom navigation (Start · Bookings · quick
+book · Board · Profile) tested down to 375 px wide. Open the site on your
+phone and use **Add to Home Screen** (iOS Safari share menu, or the install
+prompt in Chrome on Android) to get an app-like, full-screen experience.
 
 ## Production notes
 
@@ -148,26 +189,33 @@ experience.
 ```
 parking-space/
 ├── prisma/
-│   └── schema.prisma            # User, ParkingSpot, Booking, SpotRelease, AuditLog
-├── public/icon.svg              # PWA / favicon icon
+│   └── schema.prisma            # User, ParkingZone, Vehicle, ParkingSpot,
+│                                #   Booking, SpotRelease, AuditLog
+├── public/logo.svg              # brand logo (navy square, white M, red dot)
 ├── src/
 │   ├── app/
-│   │   ├── page.tsx             # dashboard: date chips + availability board
+│   │   ├── page.tsx             # Start screen: hero + upcoming booking cards
+│   │   ├── book/                # quick-booking wizard (zone → auto-assign)
+│   │   ├── board/               # per-day / per-zone availability board
+│   │   ├── my-bookings/         # upcoming + past bookings, releases panel
+│   │   ├── profile/             # user card, vehicles, admin link, sign out
 │   │   ├── login/               # Google (and optional dev) sign-in
-│   │   ├── my-bookings/         # upcoming + past bookings
-│   │   ├── admin/               # overview, spots, users, bookings, audit, setup
-│   │   ├── api/                 # availability, bookings, releases, admin/*, auth
+│   │   ├── admin/               # overview, spots+zones, users, bookings, audit, setup
+│   │   ├── api/                 # home, availability, bookings, releases,
+│   │   │                        #   zones, vehicles, admin/*, auth
+│   │   ├── icon.svg             # PWA / favicon icon
 │   │   └── manifest.ts          # PWA manifest
-│   ├── components/              # booking-board, nav, releases-panel, admin/*, ui
+│   ├── components/              # bottom-nav, start-screen, quick-book-wizard,
+│   │   │                        #   booking-board, vehicles-manager, admin/*, ui
 │   ├── lib/
 │   │   ├── dates.ts             # business-day / booking-window logic (pure)
 │   │   ├── spot-spec.ts         # "1-10, 12, A1" spot-spec parser (pure)
 │   │   ├── errors.ts            # typed ApiError + helpers
 │   │   ├── db.ts                # Prisma client singleton
 │   │   ├── audit.ts             # audit-log writer
-│   │   └── services/            # bookings, spots, admin (all DB access)
+│   │   └── services/            # bookings, spots, zones, vehicles, admin
 │   ├── auth.ts                  # next-auth v5 config (domain guard, roles)
 │   └── lib/__tests__/           # vitest unit tests (no database required)
 ├── vitest.config.ts
-└── tailwind.config.ts           # custom `brand` blue scale
+└── tailwind.config.ts           # `brand` navy + `accent` crimson scales
 ```

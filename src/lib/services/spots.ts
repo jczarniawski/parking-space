@@ -5,8 +5,19 @@ import { isPrebookDay, parsePrebookDays, todayInOfficeTz } from "@/lib/dates";
 import { parseSpotSpec } from "@/lib/spot-spec";
 import type { SessionUser } from "@/lib/api-helpers";
 
-export async function createSpots(admin: SessionUser, spec: string) {
+export async function createSpots(
+  admin: SessionUser,
+  spec: string,
+  zoneId?: string | null
+) {
   const labels = parseSpotSpec(spec);
+
+  let zone = null;
+  if (zoneId) {
+    zone = await prisma.parkingZone.findUnique({ where: { id: zoneId } });
+    if (!zone) throw notFound("Zone not found.");
+  }
+
   const existing = await prisma.parkingSpot.findMany({
     where: { number: { in: labels } },
     select: { number: true },
@@ -16,12 +27,12 @@ export async function createSpots(admin: SessionUser, spec: string) {
 
   if (toCreate.length > 0) {
     await prisma.parkingSpot.createMany({
-      data: toCreate.map((number) => ({ number })),
+      data: toCreate.map((number) => ({ number, zoneId: zone?.id ?? null })),
     });
     await logAudit({
       action: "SPOTS_CREATED",
       actorEmail: admin.email,
-      details: `Created spots: ${toCreate.join(", ")}`,
+      details: `Created spots: ${toCreate.join(", ")}${zone ? ` in zone ${zone.name}` : ""}`,
     });
   }
   return { created: toCreate, skipped: [...existingSet] };
@@ -29,7 +40,10 @@ export async function createSpots(admin: SessionUser, spec: string) {
 
 export async function listSpots() {
   const spots = await prisma.parkingSpot.findMany({
-    include: { owner: { select: { id: true, name: true, email: true } } },
+    include: {
+      owner: { select: { id: true, name: true, email: true } },
+      zone: { select: { id: true, name: true } },
+    },
   });
   return spots
     .sort((a, b) => {
@@ -43,6 +57,7 @@ export async function listSpots() {
       number: s.number,
       isActive: s.isActive,
       prebookDays: s.prebookDays,
+      zone: s.zone ? { id: s.zone.id, name: s.zone.name } : null,
       owner: s.owner
         ? { id: s.owner.id, name: s.owner.name, email: s.owner.email }
         : null,
@@ -57,6 +72,8 @@ export async function updateSpot(
     prebookDays?: number[];
     // null clears the owner; an email pre-provisions the user if needed
     ownerEmail?: string | null;
+    // null moves the spot out of any zone
+    zoneId?: string | null;
   }
 ) {
   const spot = await prisma.parkingSpot.findUnique({ where: { id: spotId } });
@@ -66,9 +83,20 @@ export async function updateSpot(
     isActive?: boolean;
     prebookDays?: string;
     ownerId?: string | null;
+    zoneId?: string | null;
   } = {};
 
   if (typeof patch.isActive === "boolean") data.isActive = patch.isActive;
+
+  if (patch.zoneId !== undefined) {
+    if (patch.zoneId !== null) {
+      const zone = await prisma.parkingZone.findUnique({
+        where: { id: patch.zoneId },
+      });
+      if (!zone) throw notFound("Zone not found.");
+    }
+    data.zoneId = patch.zoneId;
+  }
 
   if (patch.prebookDays !== undefined) {
     const days = patch.prebookDays.filter((d) => Number.isInteger(d) && d >= 1 && d <= 5);
@@ -194,6 +222,7 @@ export async function updateSpot(
       ...(data.isActive !== undefined ? { isActive: data.isActive } : {}),
       ...(data.prebookDays !== undefined ? { prebookDays: data.prebookDays } : {}),
       ...(patch.ownerEmail !== undefined ? { owner: patch.ownerEmail } : {}),
+      ...(patch.zoneId !== undefined ? { zoneId: patch.zoneId } : {}),
     }),
   });
   return { spot: updated, cancelledBookings: cancelled.length };

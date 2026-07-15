@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { auth, signIn } from "@/auth";
-import { Button, Card } from "@/components/ui";
+import { Button } from "@/components/ui";
 
 export const metadata: Metadata = {
   title: "Sign in",
@@ -42,76 +42,83 @@ export default async function LoginPage({
   const devLoginEnabled = process.env.AUTH_DEV_LOGIN === "true";
 
   return (
-    <div className="flex min-h-[70vh] items-center justify-center">
-      <Card className="w-full max-w-sm p-8">
-        <div className="flex flex-col items-center gap-2 text-center">
-          <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-600 text-xl font-bold text-white">
-            P
-          </span>
-          <h1 className="text-xl font-semibold text-slate-900">MT Parking</h1>
-          <p className="text-sm text-slate-500">
-            Office parking bookings for Match-Trade.
-          </p>
-        </div>
-
-        {error ? (
-          <div className="mt-6 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-            {error === "AccessDenied"
-              ? "That account can't sign in here. Use your @match-trade.com Google account."
-              : "Sign-in failed. Use your @match-trade.com Google account."}
-          </div>
-        ) : null}
-
-        <form
-          action={async () => {
-            "use server";
-            await signIn("google", { redirectTo: "/" });
-          }}
-          className="mt-6"
-        >
-          <Button
-            type="submit"
-            variant="secondary"
-            className="w-full gap-2 py-2.5"
-          >
-            <GoogleIcon />
-            Sign in with Google
-          </Button>
-        </form>
-
-        <p className="mt-3 text-center text-xs text-slate-400">
-          Only @match-trade.com accounts can sign in.
-        </p>
-
-        {devLoginEnabled ? (
-          <>
-            <div className="mt-6 flex items-center gap-3 text-xs uppercase tracking-wide text-slate-400">
-              <span className="h-px flex-1 bg-slate-200" />
-              Dev login
-              <span className="h-px flex-1 bg-slate-200" />
+    // Full-screen navy brand backdrop; `fixed` escapes the layout's <main>
+    // padding so the gradient covers the whole viewport.
+    <div className="fixed inset-0 z-40 overflow-y-auto bg-gradient-to-br from-brand-950 via-brand-900 to-brand-700">
+      <div className="flex min-h-full items-center justify-center px-4 py-10">
+        <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-8 shadow-card">
+          <div className="flex flex-col items-center gap-4 text-center">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo.svg" alt="Match-Trade logo" className="h-16 w-16" />
+            <div>
+              <h1 className="text-2xl font-bold tracking-tight text-brand-900">
+                MT Parking
+              </h1>
+              <p className="mt-1 text-sm text-slate-500">
+                Match-Trade Technologies
+              </p>
             </div>
-            <form
-              action={async (formData: FormData) => {
-                "use server";
-                const email = String(formData.get("email") ?? "");
-                await signIn("dev-login", { email, redirectTo: "/" });
-              }}
-              className="mt-4 flex flex-col gap-2"
+          </div>
+
+          {error ? (
+            <div className="mt-6 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              {error === "AccessDenied"
+                ? "That account can't sign in here. Use your @match-trade.com Google account."
+                : "Sign-in failed. Use your @match-trade.com Google account."}
+            </div>
+          ) : null}
+
+          <form
+            action={async () => {
+              "use server";
+              await signIn("google", { redirectTo: "/" });
+            }}
+            className="mt-6"
+          >
+            <Button
+              type="submit"
+              variant="secondary"
+              className="w-full gap-2 py-2.5"
             >
-              <input
-                type="email"
-                name="email"
-                required
-                placeholder="you@match-trade.com"
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
-              />
-              <Button type="submit" variant="primary" className="w-full">
-                Sign in as dev user
-              </Button>
-            </form>
-          </>
-        ) : null}
-      </Card>
+              <GoogleIcon />
+              Sign in with Google
+            </Button>
+          </form>
+
+          <p className="mt-3 text-center text-xs text-slate-400">
+            Only @match-trade.com accounts can sign in.
+          </p>
+
+          {devLoginEnabled ? (
+            <>
+              <div className="mt-6 flex items-center gap-3 text-xs uppercase tracking-wide text-slate-400">
+                <span className="h-px flex-1 bg-slate-200" />
+                Dev login
+                <span className="h-px flex-1 bg-slate-200" />
+              </div>
+              <form
+                action={async (formData: FormData) => {
+                  "use server";
+                  const email = String(formData.get("email") ?? "");
+                  await signIn("dev-login", { email, redirectTo: "/" });
+                }}
+                className="mt-4 flex flex-col gap-2"
+              >
+                <input
+                  type="email"
+                  name="email"
+                  required
+                  placeholder="you@match-trade.com"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                />
+                <Button type="submit" variant="primary" className="w-full">
+                  Sign in as dev user
+                </Button>
+              </form>
+            </>
+          ) : null}
+        </div>
+      </div>
     </div>
   );
 }

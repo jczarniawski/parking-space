@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { handleApi, requireUser } from "@/lib/api-helpers";
 import { getBoard } from "@/lib/services/bookings";
+import { listZones } from "@/lib/services/zones";
 import { getBookableDates } from "@/lib/dates";
 import { badRequest } from "@/lib/errors";
 
@@ -20,6 +21,10 @@ export const GET = handleApi(async (req: NextRequest) => {
       "OUTSIDE_WINDOW"
     );
   }
-  const board = await getBoard(date, viewer);
-  return NextResponse.json({ ...board, bookableDates });
+  const zoneId = req.nextUrl.searchParams.get("zone");
+  const [board, zones] = await Promise.all([
+    getBoard(date, viewer, zoneId),
+    listZones(),
+  ]);
+  return NextResponse.json({ ...board, bookableDates, zones, zoneId });
 });

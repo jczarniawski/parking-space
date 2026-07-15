@@ -16,6 +16,7 @@ export const PATCH = handleApi(
       isActive?: boolean;
       prebookDays?: number[];
       ownerEmail?: string | null;
+      zoneId?: string | null;
     } = {};
     if (typeof body.isActive === "boolean") patch.isActive = body.isActive;
     if (Array.isArray(body.prebookDays)) {
@@ -23,6 +24,9 @@ export const PATCH = handleApi(
     }
     if (body.ownerEmail === null || typeof body.ownerEmail === "string") {
       patch.ownerEmail = body.ownerEmail;
+    }
+    if (body.zoneId === null || typeof body.zoneId === "string") {
+      patch.zoneId = body.zoneId;
     }
     if (Object.keys(patch).length === 0) throw badRequest("Nothing to update.");
 

@@ -17,19 +17,29 @@ type AdminSpot = {
   number: string;
   isActive: boolean;
   prebookDays: string; // comma-separated ISO weekdays, e.g. "1,2,3,4,5"
+  zone: { id: string; name: string } | null;
   owner: { id: string; name: string | null; email: string } | null;
 };
+
+type Zone = { id: string; name: string; spotCount: number };
 
 const WEEKDAYS = [1, 2, 3, 4, 5];
 
 export function SpotsManager() {
   const [spots, setSpots] = useState<AdminSpot[] | null>(null);
+  const [zones, setZones] = useState<Zone[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [spec, setSpec] = useState("");
+  const [specZoneId, setSpecZoneId] = useState("");
   const [adding, setAdding] = useState(false);
   const [addResult, setAddResult] = useState<string | null>(null);
   const [ownerDrafts, setOwnerDrafts] = useState<Record<string, string>>({});
+  // Zones card state
+  const [newZoneName, setNewZoneName] = useState("");
+  const [addingZone, setAddingZone] = useState(false);
+  const [zoneDrafts, setZoneDrafts] = useState<Record<string, string>>({});
+  const [zoneBusyId, setZoneBusyId] = useState<string | null>(null);
   const errorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const showError = useCallback((message: string) => {
@@ -40,12 +50,27 @@ export function SpotsManager() {
 
   const load = useCallback(async () => {
     try {
-      const data = await apiFetch<{ spots: AdminSpot[] }>("/api/admin/spots");
-      setSpots(data.spots);
+      const [spotsData, zonesData] = await Promise.all([
+        apiFetch<{ spots: AdminSpot[] }>("/api/admin/spots"),
+        apiFetch<{ zones: Zone[] }>("/api/admin/zones"),
+      ]);
+      setSpots(spotsData.spots);
+      setZones(zonesData.zones);
       setOwnerDrafts(
         Object.fromEntries(
-          data.spots.map((s): [string, string] => [s.id, s.owner?.email ?? ""])
+          spotsData.spots.map((s): [string, string] => [
+            s.id,
+            s.owner?.email ?? "",
+          ])
         )
+      );
+      setZoneDrafts(
+        Object.fromEntries(
+          zonesData.zones.map((z): [string, string] => [z.id, z.name])
+        )
+      );
+      setSpecZoneId((prev) =>
+        prev === "" || zonesData.zones.some((z) => z.id === prev) ? prev : ""
       );
     } catch (err) {
       showError(err instanceof Error ? err.message : "Failed to load spots.");
@@ -66,6 +91,7 @@ export function SpotsManager() {
       isActive?: boolean;
       prebookDays?: number[];
       ownerEmail?: string | null;
+      zoneId?: string | null;
     }
   ) {
     setBusyId(spotId);
@@ -109,7 +135,10 @@ export function SpotsManager() {
     try {
       const data = await apiFetch<{ created: string[]; skipped: string[] }>(
         "/api/admin/spots",
-        { method: "POST", body: JSON.stringify({ spec }) }
+        {
+          method: "POST",
+          body: JSON.stringify({ spec, zoneId: specZoneId || null }),
+        }
       );
       const parts: string[] = [];
       parts.push(
@@ -127,6 +156,60 @@ export function SpotsManager() {
       showError(err instanceof Error ? err.message : "Adding spots failed.");
     } finally {
       setAdding(false);
+    }
+  }
+
+  async function addZone(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newZoneName.trim()) return;
+    setAddingZone(true);
+    try {
+      await apiFetch("/api/admin/zones", {
+        method: "POST",
+        body: JSON.stringify({ name: newZoneName }),
+      });
+      setNewZoneName("");
+      await load();
+    } catch (err) {
+      showError(err instanceof Error ? err.message : "Creating the zone failed.");
+    } finally {
+      setAddingZone(false);
+    }
+  }
+
+  async function renameZone(zone: Zone) {
+    const name = (zoneDrafts[zone.id] ?? "").trim();
+    if (!name || name === zone.name) return;
+    setZoneBusyId(zone.id);
+    try {
+      await apiFetch(`/api/admin/zones/${zone.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ name }),
+      });
+      await load();
+    } catch (err) {
+      showError(err instanceof Error ? err.message : "Renaming the zone failed.");
+    } finally {
+      setZoneBusyId(null);
+    }
+  }
+
+  async function deleteZone(zone: Zone) {
+    if (
+      !window.confirm(
+        `Delete zone "${zone.name}"? Only zones without spots can be deleted.`
+      )
+    ) {
+      return;
+    }
+    setZoneBusyId(zone.id);
+    try {
+      await apiFetch(`/api/admin/zones/${zone.id}`, { method: "DELETE" });
+      await load();
+    } catch (err) {
+      showError(err instanceof Error ? err.message : "Deleting the zone failed.");
+    } finally {
+      setZoneBusyId(null);
     }
   }
 
@@ -167,6 +250,76 @@ export function SpotsManager() {
       ) : null}
 
       <Card className="p-4">
+        <h3 className="text-sm font-semibold text-slate-900">Zones</h3>
+        <p className="mt-1 text-xs text-slate-500">
+          Group spots into zones (e.g. Underground / Ground level). Only empty
+          zones can be deleted.
+        </p>
+        {zones.length > 0 ? (
+          <ul className="mt-3 space-y-2">
+            {zones.map((zone) => {
+              const draft = zoneDrafts[zone.id] ?? "";
+              const dirty = draft.trim() !== zone.name && draft.trim() !== "";
+              const busy = zoneBusyId === zone.id;
+              return (
+                <li key={zone.id} className="flex flex-wrap items-center gap-2">
+                  <input
+                    type="text"
+                    value={draft}
+                    maxLength={40}
+                    onChange={(e) =>
+                      setZoneDrafts((prev) => ({
+                        ...prev,
+                        [zone.id]: e.target.value,
+                      }))
+                    }
+                    className="w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                    aria-label={`Rename zone ${zone.name}`}
+                  />
+                  <Badge tone="slate">
+                    {zone.spotCount} spot{zone.spotCount === 1 ? "" : "s"}
+                  </Badge>
+                  <Button
+                    variant="secondary"
+                    disabled={busy || !dirty}
+                    onClick={() => void renameZone(zone)}
+                  >
+                    {busy ? "Saving…" : "Rename"}
+                  </Button>
+                  <Button
+                    variant="danger"
+                    disabled={busy}
+                    onClick={() => void deleteZone(zone)}
+                  >
+                    Delete
+                  </Button>
+                </li>
+              );
+            })}
+          </ul>
+        ) : (
+          <p className="mt-3 text-sm text-slate-500">
+            No zones yet — spots without a zone are shown to everyone without a
+            zone picker.
+          </p>
+        )}
+        <form onSubmit={addZone} className="mt-3 flex items-center gap-2">
+          <input
+            type="text"
+            value={newZoneName}
+            maxLength={40}
+            onChange={(e) => setNewZoneName(e.target.value)}
+            placeholder="New zone name, e.g. Underground"
+            className="w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+            aria-label="New zone name"
+          />
+          <Button type="submit" disabled={addingZone || !newZoneName.trim()}>
+            {addingZone ? "Adding…" : "Add zone"}
+          </Button>
+        </form>
+      </Card>
+
+      <Card className="p-4">
         <h3 className="text-sm font-semibold text-slate-900">Add spots</h3>
         <form
           onSubmit={addSpots}
@@ -180,6 +333,19 @@ export function SpotsManager() {
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
             aria-label="Spot numbers to add"
           />
+          <select
+            value={specZoneId}
+            onChange={(e) => setSpecZoneId(e.target.value)}
+            className="rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm text-slate-700 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+            aria-label="Zone for new spots"
+          >
+            <option value="">No zone</option>
+            {zones.map((z) => (
+              <option key={z.id} value={z.id}>
+                {z.name}
+              </option>
+            ))}
+          </select>
           <Button type="submit" disabled={adding || !spec.trim()}>
             {adding ? "Adding…" : "Add"}
           </Button>
@@ -249,6 +415,29 @@ export function SpotsManager() {
                   </div>
 
                   <div className="mt-3 flex flex-col gap-3 border-t border-slate-100 pt-3 sm:flex-row sm:items-center">
+                    <label className="flex items-center gap-2 text-xs font-medium text-slate-600">
+                      Zone
+                      <select
+                        value={spot.zone?.id ?? ""}
+                        disabled={busy}
+                        onChange={(e) =>
+                          void patchSpot(spot.id, {
+                            zoneId:
+                              e.target.value === "" ? null : e.target.value,
+                          })
+                        }
+                        className="rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm text-slate-700 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 disabled:opacity-60"
+                        aria-label={`Zone for spot ${spot.number}`}
+                      >
+                        <option value="">No zone</option>
+                        {zones.map((z) => (
+                          <option key={z.id} value={z.id}>
+                            {z.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
                     <div className="flex w-full items-center gap-2 sm:max-w-sm">
                       <input
                         type="email"

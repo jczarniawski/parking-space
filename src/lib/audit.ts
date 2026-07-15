@@ -9,7 +9,10 @@ export type AuditAction =
   | "SPOT_UPDATED"
   | "SPOT_DELETED"
   | "ROLE_CHANGED"
-  | "USER_PREPROVISIONED";
+  | "USER_PREPROVISIONED"
+  | "ZONE_CREATED"
+  | "ZONE_UPDATED"
+  | "ZONE_DELETED";
 
 export async function logAudit(entry: {
   action: AuditAction;

@@ -134,7 +134,7 @@ export async function listAllBookings(
       where,
       include: {
         user: { select: { id: true, name: true, email: true } },
-        spot: { select: { number: true } },
+        spot: { select: { number: true, zone: { select: { name: true } } } },
       },
       orderBy: [{ date: "desc" }, { createdAt: "desc" }],
       take: limit,
@@ -148,6 +148,8 @@ export async function listAllBookings(
       id: b.id,
       date: b.date,
       spotNumber: b.spot.number,
+      zoneName: b.spot.zone?.name ?? null,
+      plate: b.vehiclePlate,
       userId: b.user.id,
       userName: b.user.name ?? b.user.email,
       userEmail: b.user.email,
@@ -167,9 +169,19 @@ export function bookingsToCsv(
     const guarded = /^[=+\-@\t\r]/.test(v) ? `'${v}` : v;
     return `"${guarded.replace(/"/g, '""')}"`;
   };
-  const header = ["date", "spot", "employee", "email", "booked_at"];
+  const header = ["date", "zone", "spot", "plate", "employee", "email", "booked_at"];
   const lines = rows.map((r) =>
-    [r.date, r.spotNumber, r.userName, r.userEmail, r.createdAt].map(esc).join(",")
+    [
+      r.date,
+      r.zoneName ?? "",
+      r.spotNumber,
+      r.plate ?? "",
+      r.userName,
+      r.userEmail,
+      r.createdAt,
+    ]
+      .map(esc)
+      .join(",")
   );
   return [header.join(","), ...lines].join("\n");
 }

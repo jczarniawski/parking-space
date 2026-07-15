@@ -3,9 +3,11 @@ import { Card } from "@/components/ui";
 
 export default function NotFound() {
   return (
-    <div className="flex min-h-[60vh] items-center justify-center">
-      <Card className="w-full max-w-sm p-8 text-center">
-        <p className="text-5xl font-bold text-brand-600">404</p>
+    <div className="mx-auto flex min-h-[60vh] w-full max-w-md items-center justify-center">
+      <Card className="w-full rounded-2xl p-8 text-center shadow-card">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/logo.svg" alt="" className="mx-auto h-12 w-12" />
+        <p className="mt-4 text-5xl font-bold text-brand-900">404</p>
         <h1 className="mt-3 text-lg font-semibold text-slate-900">
           Page not found
         </h1>
@@ -14,9 +16,9 @@ export default function NotFound() {
         </p>
         <Link
           href="/"
-          className="mt-6 inline-flex items-center justify-center rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-700"
+          className="mt-6 inline-flex min-h-[44px] items-center justify-center rounded-xl bg-accent-600 px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-accent-700"
         >
-          Back to parking
+          Back to Start
         </Link>
       </Card>
     </div>

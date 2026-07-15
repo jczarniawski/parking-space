@@ -14,6 +14,8 @@ type AdminBooking = {
   id: string;
   date: string;
   spotNumber: string;
+  zoneName: string | null;
+  plate: string | null;
   userId: string;
   userName: string;
   userEmail: string;
@@ -175,11 +177,13 @@ export function BookingsTable() {
               narrow the filters or use the CSV export for the full set.
             </p>
           ) : null}
-          <table className="w-full min-w-[40rem] text-left text-sm">
+          <table className="w-full min-w-[52rem] text-left text-sm">
             <thead>
               <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
                 <th className="px-4 py-3 font-medium">Date</th>
+                <th className="px-4 py-3 font-medium">Zone</th>
                 <th className="px-4 py-3 font-medium">Spot</th>
+                <th className="px-4 py-3 font-medium">Plate</th>
                 <th className="px-4 py-3 font-medium">Employee</th>
                 <th className="px-4 py-3 font-medium">Booked at</th>
                 <th className="px-4 py-3 font-medium">Status</th>
@@ -194,8 +198,14 @@ export function BookingsTable() {
                   <td className="whitespace-nowrap px-4 py-3 text-slate-900">
                     {formatDateHuman(b.date)}
                   </td>
+                  <td className="whitespace-nowrap px-4 py-3 text-slate-600">
+                    {b.zoneName ?? "—"}
+                  </td>
                   <td className="px-4 py-3 font-medium text-slate-900">
                     {b.spotNumber}
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-3 text-slate-600">
+                    {b.plate ?? "—"}
                   </td>
                   <td className="px-4 py-3">
                     <p className="text-slate-900">{b.userName}</p>

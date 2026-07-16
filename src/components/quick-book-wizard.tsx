@@ -77,64 +77,6 @@ function CheckIcon({ className }: { className?: string }) {
   );
 }
 
-function CarIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.8}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-      aria-hidden="true"
-    >
-      <path d="M5 16.5H3.8a1.3 1.3 0 0 1-1.3-1.3v-2.6c0-.9.62-1.68 1.5-1.9l1.8-.45 1.62-3A2 2 0 0 1 9.18 6.2h5.06c.6 0 1.18.27 1.56.74l2.05 2.5 2.15.54c.88.22 1.5 1.01 1.5 1.92v2.7c0 .72-.58 1.3-1.3 1.3H19" />
-      <circle cx="7.5" cy="16.5" r="1.9" />
-      <circle cx="16.5" cy="16.5" r="1.9" />
-      <path d="M9.4 16.5h5.2" />
-    </svg>
-  );
-}
-
-function DeskIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.8}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-      aria-hidden="true"
-    >
-      <path d="M3.5 9h17" />
-      <path d="M5.5 9v8.5M18.5 9v8.5" />
-      <rect x="12" y="12" width="6.5" height="3.5" rx="0.75" />
-    </svg>
-  );
-}
-
-function MeetingRoomIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.8}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-      aria-hidden="true"
-    >
-      <rect x="4" y="5" width="16" height="11" rx="1.5" />
-      <path d="M12 16v3" />
-      <path d="M8.5 19h7" />
-    </svg>
-  );
-}
-
 // ---------- Step indicator ----------
 
 function StepDots({ step, label }: { step: number; label: string }) {
@@ -327,36 +269,6 @@ export function QuickBookWizard() {
       ) : step === 1 ? (
         /* ---------- Step 1: what, where, when ---------- */
         <div className="space-y-5">
-          {/* Category */}
-          <div className="grid grid-cols-3 gap-2">
-            <button
-              type="button"
-              aria-pressed="true"
-              className="flex flex-col items-center gap-1.5 rounded-2xl bg-brand-700 px-2 py-3.5 text-white shadow-card"
-            >
-              <CarIcon className="h-6 w-6" />
-              <span className="text-xs font-medium">{t("qb.parking")}</span>
-            </button>
-            <button
-              type="button"
-              disabled
-              title={t("qb.comingSoon")}
-              className="flex cursor-not-allowed flex-col items-center gap-1.5 rounded-2xl border border-slate-200 bg-slate-50 px-2 py-3.5 text-slate-400"
-            >
-              <DeskIcon className="h-6 w-6" />
-              <span className="text-xs font-medium">{t("qb.desk")}</span>
-            </button>
-            <button
-              type="button"
-              disabled
-              title={t("qb.comingSoon")}
-              className="flex cursor-not-allowed flex-col items-center gap-1.5 rounded-2xl border border-slate-200 bg-slate-50 px-2 py-3.5 text-slate-400"
-            >
-              <MeetingRoomIcon className="h-6 w-6" />
-              <span className="text-xs font-medium">{t("qb.meetingRoom")}</span>
-            </button>
-          </div>
-
           {/* Zone */}
           {zones.length > 0 ? (
             <div>

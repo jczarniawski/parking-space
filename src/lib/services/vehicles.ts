@@ -8,7 +8,8 @@ export function normalizePlate(plate: string): string {
   const normalized = plate.trim().toUpperCase().replace(/\s+/g, " ");
   if (!/^[A-Z0-9][A-Z0-9 -]{1,11}$/.test(normalized)) {
     throw badRequest(
-      "Enter a valid registration plate (2–12 letters/digits, e.g. PY 1075E)."
+      "Enter a valid registration plate (2–12 letters/digits, e.g. PY 1075E).",
+      "PLATE_INVALID"
     );
   }
   return normalized;
@@ -29,7 +30,7 @@ export async function addVehicle(viewer: SessionUser, plate: string) {
     const vehicle = await serializableTx(async (tx) => {
       const count = await tx.vehicle.count({ where: { userId: viewer.id } });
       if (count >= 5) {
-        throw badRequest("You can keep at most 5 vehicles — remove one first.");
+        throw badRequest("You can keep at most 5 vehicles — remove one first.", "VEHICLE_LIMIT");
       }
       return tx.vehicle.create({
         data: { userId: viewer.id, plate: normalized },
@@ -38,7 +39,7 @@ export async function addVehicle(viewer: SessionUser, plate: string) {
     return { id: vehicle.id, plate: vehicle.plate };
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
-      throw conflict("You already added that plate.");
+      throw conflict("You already added that plate.", "PLATE_EXISTS");
     }
     throw err;
   }

@@ -9,6 +9,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import type { HomeReservedDay } from "@/lib/services/bookings";
 import { compareDates, relativeDayLabel } from "@/lib/dates";
+import { useLocale } from "@/components/locale-provider";
 import {
   Badge,
   Button,
@@ -39,9 +40,9 @@ type CardItem =
   | ({ kind: "reserved"; key: string } & HomeReservedDay);
 
 function firstName(nameOrEmail: string | null | undefined): string {
-  if (!nameOrEmail) return "there";
+  if (!nameOrEmail) return "";
   const beforeAt = nameOrEmail.split("@")[0] || nameOrEmail;
-  return beforeAt.trim().split(/\s+/)[0] || "there";
+  return beforeAt.trim().split(/\s+/)[0] || "";
 }
 
 // ---------- Icons (inline, no icon library) ----------
@@ -191,14 +192,15 @@ function SpotCard({
   onRelease: () => void;
   onReclaim: () => void;
 }) {
+  const { t, locale } = useLocale();
   const actions: MenuAction[] =
     item.kind === "booking"
-      ? [{ label: "Cancel booking", danger: true, onSelect: onCancelRequest }]
+      ? [{ label: t("start.cancelBooking"), danger: true, onSelect: onCancelRequest }]
       : item.released
         ? item.bookedBy
           ? [] // a colleague booked the released day — nothing to do here
-          : [{ label: "Reclaim", onSelect: onReclaim }]
-        : [{ label: "Release this day", onSelect: onRelease }];
+          : [{ label: t("start.reclaim"), onSelect: onReclaim }]
+        : [{ label: t("start.releaseThisDay"), onSelect: onRelease }];
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-card">
@@ -206,23 +208,26 @@ function SpotCard({
         <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 pt-1">
           <CarIcon className="h-5 w-5 shrink-0 text-brand-600" />
           <span className="text-sm font-medium text-slate-600">
-            {item.zoneName ?? "Parking"}
+            {item.zoneName ?? t("common.parking")}
           </span>
           {item.kind === "reserved" ? (
-            <Badge tone="slate">Reserved for you</Badge>
+            <Badge tone="slate">{t("start.reservedForYou")}</Badge>
           ) : null}
           {item.kind === "reserved" && item.released ? (
             item.bookedBy ? (
-              <Badge tone="blue">Booked by {item.bookedBy}</Badge>
+              <Badge tone="blue">{t("start.bookedBy", { name: item.bookedBy })}</Badge>
             ) : (
-              <Badge tone="slate">Released</Badge>
+              <Badge tone="slate">{t("start.released")}</Badge>
             )
           ) : null}
         </div>
         <KebabMenu
           actions={actions}
           disabled={busy}
-          label={`Actions for spot ${item.spotNumber} on ${relativeDayLabel(item.date)}`}
+          label={t("start.actionsFor", {
+            number: item.spotNumber,
+            day: relativeDayLabel(item.date, locale),
+          })}
         />
       </div>
 
@@ -232,7 +237,9 @@ function SpotCard({
 
       <div className="mt-4 flex items-center gap-1.5 text-sm text-slate-500">
         <ClockIcon className="h-4 w-4 shrink-0" />
-        <span>All day · {relativeDayLabel(item.date)}</span>
+        <span>
+          {t("common.allDay")} · {relativeDayLabel(item.date, locale)}
+        </span>
         {item.kind === "booking" && item.plate ? (
           <span className="ml-auto rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500">
             {item.plate}
@@ -242,13 +249,13 @@ function SpotCard({
 
       {item.kind === "booking" && confirmingCancel ? (
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-red-100 bg-red-50 px-3 py-2.5">
-          <p className="text-sm font-medium text-red-700">Cancel this booking?</p>
+          <p className="text-sm font-medium text-red-700">{t("start.cancelConfirm")}</p>
           <div className="flex gap-1.5">
             <Button variant="danger" disabled={busy} onClick={onCancelConfirm}>
-              {busy ? "Cancelling…" : "Cancel it"}
+              {busy ? t("start.cancelling") : t("start.cancelIt")}
             </Button>
             <Button variant="ghost" disabled={busy} onClick={onCancelDismiss}>
-              Keep
+              {t("common.keep")}
             </Button>
           </div>
         </div>
@@ -266,6 +273,7 @@ export function StartScreen({
   name: string | null | undefined;
   role: string;
 }) {
+  const { t, tPlural } = useLocale();
   const [data, setData] = useState<HomeData | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -279,11 +287,11 @@ export function StartScreen({
       const fresh = await apiFetch<HomeData>("/api/home");
       setData(fresh);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong.");
+      setError(err instanceof Error ? err.message : t("common.somethingWentWrong"));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     void load();
@@ -301,7 +309,7 @@ export function StartScreen({
     try {
       await fn();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong.");
+      setError(err instanceof Error ? err.message : t("common.somethingWentWrong"));
     } finally {
       setConfirmKey(null);
       setBusy(false);
@@ -327,17 +335,19 @@ export function StartScreen({
   }, [data]);
 
   const subtitle = !data
-    ? "Loading your day…"
+    ? t("start.loadingDay")
     : data.todayCount === 0
-      ? "No bookings today"
-      : `${data.todayCount} booking${data.todayCount === 1 ? "" : "s"} today`;
+      ? t("start.noBookingsToday")
+      : tPlural("start.bookingsToday", data.todayCount);
 
   return (
     <div className="mx-auto w-full max-w-md">
       {/* Hero — bleeds past the layout's px-4/pt-4 padding to reach the screen edges. */}
       <section className="-mx-4 -mt-4 rounded-b-[2rem] bg-gradient-to-br from-brand-900 to-brand-700 px-6 pb-10 pt-8 text-white">
         <p className="text-2xl font-semibold leading-tight">
-          Hi {firstName(name)} 👋
+          {firstName(name)
+            ? t("start.hi", { name: firstName(name) })
+            : t("start.hiAnon")}
         </p>
         <p className="mt-1.5 text-sm text-brand-100">{subtitle}</p>
       </section>
@@ -359,8 +369,8 @@ export function StartScreen({
         ) : !data ? (
           <Card>
             <EmptyState
-              title="Couldn't load your bookings"
-              hint={error ?? "Please try again."}
+              title={t("start.loadFailedTitle")}
+              hint={error ?? t("start.pleaseRetry")}
             />
             <div className="flex justify-center pb-8">
               <Button
@@ -371,29 +381,29 @@ export function StartScreen({
                   void load();
                 }}
               >
-                Try again
+                {t("common.tryAgain")}
               </Button>
             </div>
           </Card>
         ) : items.length === 0 ? (
           <Card>
             <EmptyState
-              title="No parking booked yet"
-              hint="Grab a spot for the next days in a few taps."
+              title={t("start.emptyTitle")}
+              hint={t("start.emptyHint")}
             />
             <div className="flex justify-center pb-8">
               <Link
                 href="/book"
                 className="inline-flex h-12 items-center justify-center rounded-xl bg-accent-600 px-6 text-sm font-semibold text-white transition-colors hover:bg-accent-700"
               >
-                Quick book
+                {t("start.quickBook")}
               </Link>
             </div>
           </Card>
         ) : (
           <>
             <h2 className="px-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Upcoming
+              {t("start.upcoming")}
             </h2>
             {items.map((item) => (
               <SpotCard
@@ -430,12 +440,12 @@ export function StartScreen({
             ))}
             {role === "MANAGEMENT" || role === "ADMIN" ? (
               <p className="px-1 text-xs text-slate-400">
-                Own a reserved spot? Plan releases further ahead on{" "}
+                {t("start.planReleases")}{" "}
                 <Link
                   href="/my-bookings"
                   className="font-medium text-brand-600 hover:underline"
                 >
-                  Bookings
+                  {t("nav.bookings")}
                 </Link>
                 .
               </p>

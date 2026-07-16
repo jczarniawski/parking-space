@@ -18,6 +18,7 @@ import {
   todayInOfficeTz,
   weekdayShortName,
 } from "@/lib/dates";
+import { useLocale } from "@/components/locale-provider";
 import { Badge, Button, EmptyState, apiFetch } from "@/components/ui";
 
 type ReleasesData = {
@@ -26,6 +27,7 @@ type ReleasesData = {
 };
 
 export function ReleasesPanel() {
+  const { t, locale } = useLocale();
   const [data, setData] = useState<ReleasesData | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [date, setDate] = useState("");
@@ -68,34 +70,30 @@ export function ReleasesPanel() {
   const today = todayInOfficeTz();
   const maxDate = addDays(today, RELEASE_HORIZON_DAYS);
   const prebookDayNames = parsePrebookDays(spot.prebookDays)
-    .map(weekdayShortName)
+    .map((d) => weekdayShortName(d, locale))
     .join(", ");
 
   async function submitRelease(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setFlash(null);
     if (!isValidISODate(date)) {
-      setError("Pick a date to release first.");
+      setError(t("rel.pickDate"));
       return;
     }
     if (date < today) {
-      setError("You can't release your spot for a past day.");
+      setError(t("rel.pastDay"));
       return;
     }
     if (date > maxDate) {
-      setError(
-        `Releases can be made at most ${RELEASE_HORIZON_DAYS} days in advance.`
-      );
+      setError(t("rel.horizon", { days: RELEASE_HORIZON_DAYS }));
       return;
     }
     if (isWeekend(date)) {
-      setError("Weekends aren't working days — there's nothing to release.");
+      setError(t("rel.weekend"));
       return;
     }
     if (!isPrebookDay(spot.prebookDays, date)) {
-      setError(
-        `Your spot is only prebooked for you on ${prebookDayNames} — pick one of those days.`
-      );
+      setError(t("rel.notPrebook", { days: prebookDayNames }));
       return;
     }
     setBusy(true);
@@ -105,10 +103,15 @@ export function ReleasesPanel() {
         method: "POST",
         body: JSON.stringify({ date }),
       });
-      setFlash(`Spot ${spot.number} released for ${formatDateHuman(date)}.`);
+      setFlash(
+        t("rel.releasedFlash", {
+          number: spot.number,
+          date: formatDateHuman(date, locale),
+        })
+      );
       setDate("");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong.");
+      setError(err instanceof Error ? err.message : t("common.somethingWentWrong"));
     } finally {
       setBusy(false);
       await load();
@@ -125,10 +128,13 @@ export function ReleasesPanel() {
         { method: "DELETE" }
       );
       setFlash(
-        `Spot ${spot.number} reclaimed for ${formatDateHuman(releaseDate)}.`
+        t("rel.reclaimedFlash", {
+          number: spot.number,
+          date: formatDateHuman(releaseDate, locale),
+        })
       );
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong.");
+      setError(err instanceof Error ? err.message : t("common.somethingWentWrong"));
     } finally {
       setReclaimingDate(null);
       await load();
@@ -139,13 +145,12 @@ export function ReleasesPanel() {
     <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-card">
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-base font-semibold text-slate-900">
-          My reserved spot
+          {t("rel.title")}
         </h2>
-        <Badge tone="blue">Spot {spot.number}</Badge>
+        <Badge tone="blue">{t("rel.spotBadge", { number: spot.number })}</Badge>
       </div>
       <p className="mt-1 text-sm text-slate-500">
-        Prebooked for you on {prebookDayNames}. Release it for days you
-        won&apos;t need it, so colleagues can book it.
+        {t("rel.prebookedOn", { days: prebookDayNames })}
       </p>
 
       {error ? (
@@ -168,7 +173,7 @@ export function ReleasesPanel() {
       <form onSubmit={submitRelease} className="mt-4 flex items-end gap-2">
         <label className="min-w-0 flex-1">
           <span className="mb-1 block text-sm font-medium text-slate-700">
-            Release for date
+            {t("rel.releaseForDate")}
           </span>
           <input
             type="date"
@@ -185,18 +190,18 @@ export function ReleasesPanel() {
           className="min-h-[44px] shrink-0"
           disabled={busy || !date}
         >
-          {busy ? "Releasing…" : "Release"}
+          {busy ? t("rel.releasing") : t("rel.release")}
         </Button>
       </form>
 
       <div className="mt-5">
         <h3 className="px-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
-          Upcoming releases
+          {t("rel.upcomingReleases")}
         </h3>
         {releases.length === 0 ? (
           <EmptyState
-            title="No upcoming releases"
-            hint="Your spot stays reserved for you."
+            title={t("rel.noneTitle")}
+            hint={t("rel.noneHint")}
           />
         ) : (
           <>
@@ -208,15 +213,15 @@ export function ReleasesPanel() {
                 >
                   <div className="min-w-0">
                     <p className="text-sm font-medium text-slate-800">
-                      {relativeDayLabel(r.date)}
+                      {relativeDayLabel(r.date, locale)}
                     </p>
                     {r.bookedBy ? (
                       <p className="truncate text-xs text-rose-600">
-                        Booked by {r.bookedBy}
+                        {t("rel.bookedBy", { name: r.bookedBy })}
                       </p>
                     ) : (
                       <p className="text-xs text-emerald-600">
-                        Still free — you can reclaim it
+                        {t("rel.stillFree")}
                       </p>
                     )}
                   </div>
@@ -226,19 +231,19 @@ export function ReleasesPanel() {
                     disabled={!!r.bookedBy || reclaimingDate === r.date}
                     title={
                       r.bookedBy
-                        ? `${r.bookedBy} already booked it for this day`
+                        ? t("rel.reclaimBlockedTitle", { name: r.bookedBy })
                         : undefined
                     }
                     onClick={() => void reclaim(r.date)}
                   >
-                    {reclaimingDate === r.date ? "Reclaiming…" : "Reclaim"}
+                    {reclaimingDate === r.date ? t("rel.reclaiming") : t("rel.reclaim")}
                   </Button>
                 </li>
               ))}
             </ul>
             {releases.some((r) => r.bookedBy) ? (
               <p className="mt-2 text-xs text-slate-400">
-                Days a colleague has already booked can&apos;t be reclaimed.
+                {t("rel.cantReclaimNote")}
               </p>
             ) : null}
           </>

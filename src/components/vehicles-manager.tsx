@@ -6,6 +6,7 @@
 // they are managed.
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
+import { useLocale } from "@/components/locale-provider";
 import { Button, Spinner, apiFetch, cn } from "@/components/ui";
 
 type Vehicle = { id: string; plate: string };
@@ -73,6 +74,7 @@ function PlusIcon({ className }: { className?: string }) {
 // ---------- Manager ----------
 
 export function VehiclesManager() {
+  const { t } = useLocale();
   const [vehicles, setVehicles] = useState<Vehicle[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -85,11 +87,12 @@ export function VehiclesManager() {
       const data = await apiFetch<{ vehicles: Vehicle[] }>("/api/vehicles");
       setVehicles(data.vehicles);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong.");
+      setError(err instanceof Error ? err.message : t("common.somethingWentWrong"));
     } finally {
       setLoading(false);
     }
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [t]);
 
   useEffect(() => {
     void load();
@@ -107,7 +110,7 @@ export function VehiclesManager() {
       });
       setPlate("");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong.");
+      setError(err instanceof Error ? err.message : t("common.somethingWentWrong"));
     } finally {
       setBusy(false);
       await load();
@@ -120,7 +123,7 @@ export function VehiclesManager() {
     try {
       await apiFetch(`/api/vehicles/${id}`, { method: "DELETE" });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong.");
+      setError(err instanceof Error ? err.message : t("common.somethingWentWrong"));
     } finally {
       setConfirmId(null);
       setBusy(false);
@@ -133,13 +136,13 @@ export function VehiclesManager() {
   return (
     <section className="rounded-2xl border border-slate-200 bg-white shadow-card">
       <div className="flex items-baseline justify-between gap-2 px-4 pt-4">
-        <h2 className="text-sm font-semibold text-slate-800">My vehicles</h2>
+        <h2 className="text-sm font-semibold text-slate-800">{t("profile.myVehicles")}</h2>
         <p className="text-xs text-slate-400">
-          Up to {MAX_VEHICLES} plates
+          {t("profile.upToPlates", { max: MAX_VEHICLES })}
         </p>
       </div>
       <p className="px-4 pt-0.5 text-xs text-slate-500">
-        Every booking is tied to one of your saved plates.
+        {t("profile.platesNote")}
       </p>
 
       {error ? (
@@ -168,7 +171,7 @@ export function VehiclesManager() {
                 </span>
                 <button
                   type="button"
-                  aria-label={`Remove plate ${vehicle.plate}`}
+                  aria-label={t("profile.removePlate", { plate: vehicle.plate })}
                   disabled={busy}
                   onClick={() =>
                     setConfirmId((cur) => (cur === vehicle.id ? null : vehicle.id))
@@ -181,7 +184,7 @@ export function VehiclesManager() {
               {confirmId === vehicle.id ? (
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-red-100 bg-red-50 px-3 py-2.5">
                   <p className="text-sm font-medium text-red-700">
-                    Remove {vehicle.plate}?
+                    {t("profile.removeConfirm", { plate: vehicle.plate })}
                   </p>
                   <div className="flex gap-1.5">
                     <Button
@@ -189,14 +192,14 @@ export function VehiclesManager() {
                       disabled={busy}
                       onClick={() => void removeVehicle(vehicle.id)}
                     >
-                      {busy ? "Removing…" : "Remove"}
+                      {busy ? t("common.removing") : t("common.remove")}
                     </Button>
                     <Button
                       variant="ghost"
                       disabled={busy}
                       onClick={() => setConfirmId(null)}
                     >
-                      Keep
+                      {t("common.keep")}
                     </Button>
                   </div>
                 </div>
@@ -205,7 +208,7 @@ export function VehiclesManager() {
           ))}
           {vehicles && vehicles.length === 0 ? (
             <li className="px-4 py-5 text-center text-sm text-slate-400">
-              No plates yet — add your car below to start booking.
+              {t("profile.noPlates")}
             </li>
           ) : null}
         </ul>
@@ -226,8 +229,8 @@ export function VehiclesManager() {
           autoCapitalize="characters"
           autoCorrect="off"
           spellCheck={false}
-          placeholder="e.g. PY 1075E"
-          aria-label="Registration plate"
+          placeholder={t("common.platePlaceholder")}
+          aria-label={t("profile.plateAria")}
           disabled={busy || loading || atLimit}
           className="h-11 min-w-0 flex-1 rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium uppercase tracking-wide text-slate-800 placeholder:normal-case placeholder:font-normal placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-200 disabled:bg-slate-50"
         />
@@ -237,12 +240,12 @@ export function VehiclesManager() {
           className="h-11 shrink-0 rounded-xl"
         >
           <PlusIcon className="h-4 w-4" />
-          {busy ? "Adding…" : "Add"}
+          {busy ? t("common.adding") : t("common.add")}
         </Button>
       </form>
       {atLimit ? (
         <p className="px-4 pb-4 -mt-2 text-xs text-slate-400">
-          Plate limit reached — remove one to add another.
+          {t("profile.plateLimit")}
         </p>
       ) : null}
     </section>

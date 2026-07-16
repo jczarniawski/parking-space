@@ -9,6 +9,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import type { BoardSpot } from "@/lib/services/bookings";
 import { formatDateHuman, formatDateLong, relativeDayLabel } from "@/lib/dates";
+import { useLocale } from "@/components/locale-provider";
+import type { Translator } from "@/lib/i18n";
 import {
   Button,
   Card,
@@ -48,31 +50,34 @@ function firstName(fullName: string): string {
 
 // Reserved spots deliberately render exactly like booked ones — to everyone
 // but the owner they're simply taken, and the owner acts via the banner.
-function tileStatus(spot: BoardSpot): { text: string; classes: string } {
+function tileStatus(
+  spot: BoardSpot,
+  t: Translator
+): { text: string; classes: string } {
   if (spot.status === "booked") {
     if (spot.bookedByMe) {
       return {
-        text: "Yours",
+        text: t("common.yours"),
         classes: "border-brand-400 bg-brand-50 text-brand-800 hover:bg-brand-100",
       };
     }
     return {
-      text: spot.bookedByName ? firstName(spot.bookedByName) : "Taken",
+      text: spot.bookedByName ? firstName(spot.bookedByName) : t("common.taken"),
       classes: "border-rose-200 bg-rose-50 text-rose-700",
     };
   }
   if (spot.status === "reserved") {
     return {
       text: spot.ownedByMe
-        ? "Yours"
+        ? t("common.yours")
         : spot.ownerName
           ? firstName(spot.ownerName)
-          : "Taken",
+          : t("common.taken"),
       classes: "border-rose-200 bg-rose-50 text-rose-700",
     };
   }
   return {
-    text: spot.released ? "Free • released" : "Free",
+    text: spot.released ? t("board.freeReleased") : t("common.free"),
     classes: "border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100",
   };
 }
@@ -90,6 +95,7 @@ function SpotTile({
   hasBookingToday: boolean;
   onPick: (spot: BoardSpot) => void;
 }) {
+  const { t } = useLocale();
   const mine = spot.status === "booked" && !!spot.bookedByMe;
   // Not clickable: your own released spot (reclaim via the banner instead)
   // and free spots while you already hold a booking for this day (the server
@@ -99,14 +105,14 @@ function SpotTile({
     !hasBookingToday &&
     !(spot.ownedByMe && spot.released);
   const clickable = bookable || mine;
-  const { text, classes } = tileStatus(spot);
+  const { text, classes } = tileStatus(spot, t);
 
   return (
     <button
       type="button"
       disabled={!clickable || busy}
       onClick={() => onPick(spot)}
-      aria-label={`Spot ${spot.number}: ${text}`}
+      aria-label={t("board.spotAria", { number: spot.number, status: text })}
       className={cn(
         "flex min-h-[76px] w-full flex-col items-center justify-center gap-0.5 rounded-xl border px-1.5 py-3 text-center transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600",
         classes,
@@ -126,6 +132,7 @@ function SpotTile({
 }
 
 export function BookingBoard({ role }: { role: string }) {
+  const { t, locale } = useLocale();
   const [board, setBoard] = useState<Availability | null>(null);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   // null = "all spots" (used only when no zones exist); the first response
@@ -176,7 +183,7 @@ export function BookingBoard({ role }: { role: string }) {
         setSelectedDate(data.date);
       } catch (err) {
         if (seq !== loadSeq.current) return;
-        setError(err instanceof Error ? err.message : "Something went wrong.");
+        setError(err instanceof Error ? err.message : t("common.somethingWentWrong"));
       } finally {
         if (seq === loadSeq.current) {
           setRefreshing(false);
@@ -184,7 +191,8 @@ export function BookingBoard({ role }: { role: string }) {
         }
       }
     },
-    []
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [t]
   );
 
   useEffect(() => {
@@ -245,7 +253,7 @@ export function BookingBoard({ role }: { role: string }) {
       await fn();
       setFlash(successMessage);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong.");
+      setError(err instanceof Error ? err.message : t("common.somethingWentWrong"));
     } finally {
       setPending(null);
       setBusy(false);
@@ -268,7 +276,7 @@ export function BookingBoard({ role }: { role: string }) {
       setNewPlate("");
     } catch (err) {
       setPlateError(
-        err instanceof Error ? err.message : "Couldn't save the plate."
+        err instanceof Error ? err.message : t("qb.plateSaveFailed")
       );
     } finally {
       setSavingPlate(false);
@@ -300,13 +308,13 @@ export function BookingBoard({ role }: { role: string }) {
             method: "POST",
             body: JSON.stringify({ spotId, date, vehicleId: chosenVehicleId }),
           }),
-        `Spot ${number} booked for ${formatDateHuman(date)}.`
+        t("board.bookedFlash", { number, date: formatDateHuman(date, locale) })
       );
     } else {
       const { bookingId, number } = pending;
       void runMutation(
         () => apiFetch(`/api/bookings/${bookingId}`, { method: "DELETE" }),
-        `Booking for spot ${number} cancelled.`
+        t("board.cancelledFlash", { number })
       );
     }
   }
@@ -323,8 +331,8 @@ export function BookingBoard({ role }: { role: string }) {
     return (
       <Card>
         <EmptyState
-          title="Couldn't load the parking board"
-          hint={error ?? "Please try again."}
+          title={t("board.loadFailedTitle")}
+          hint={error ?? t("start.pleaseRetry")}
         />
         <div className="flex justify-center pb-8">
           <Button
@@ -334,7 +342,7 @@ export function BookingBoard({ role }: { role: string }) {
               void load(selectedDate, selectedZone);
             }}
           >
-            Try again
+            {t("common.tryAgain")}
           </Button>
         </div>
       </Card>
@@ -387,13 +395,13 @@ export function BookingBoard({ role }: { role: string }) {
                   : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
               )}
             >
-              {relativeDayLabel(date)}
+              {relativeDayLabel(date, locale)}
             </button>
           );
         })}
         {refreshing ? <Spinner className="h-4 w-4" /> : null}
       </div>
-      <p className="text-sm text-slate-500">{formatDateLong(board.date)}</p>
+      <p className="text-sm text-slate-500">{formatDateLong(board.date, locale)}</p>
 
       {/* Notices */}
       {error ? (
@@ -417,9 +425,10 @@ export function BookingBoard({ role }: { role: string }) {
       {myBooking ? (
         <div className="flex flex-col gap-3 rounded-2xl border border-brand-200 bg-brand-50 p-4">
           <p className="text-sm text-brand-900">
-            You have spot{" "}
-            <span className="font-semibold">{myBooking.spotNumber}</span> booked
-            for {formatDateLong(board.date)}.
+            {t("board.myBooking", {
+              number: myBooking.spotNumber,
+              date: formatDateLong(board.date, locale),
+            })}
           </p>
           <Button
             variant="danger"
@@ -432,7 +441,7 @@ export function BookingBoard({ role }: { role: string }) {
               })
             }
           >
-            Cancel booking
+            {t("board.cancelBooking")}
           </Button>
         </div>
       ) : null}
@@ -441,38 +450,27 @@ export function BookingBoard({ role }: { role: string }) {
       {reserved ? (
         <div className="flex flex-col gap-3 rounded-2xl border border-brand-200 bg-brand-50 p-4">
           <p className="text-sm text-brand-900">
-            {reserved.released ? (
-              reserved.bookedBy ? (
-                <>
-                  You&apos;ve released spot{" "}
-                  <span className="font-semibold">{reserved.number}</span> for{" "}
-                  {formatDateLong(board.date)} and{" "}
-                  <span className="font-semibold">{reserved.bookedBy}</span>{" "}
-                  has booked it.
-                </>
-              ) : (
-                <>
-                  You&apos;ve released spot{" "}
-                  <span className="font-semibold">{reserved.number}</span> for{" "}
-                  {formatDateLong(board.date)} — anyone can book it.
-                </>
-              )
-            ) : (
-              <>
-                Spot <span className="font-semibold">{reserved.number}</span> is
-                reserved for you on {formatDateLong(board.date)}.
-              </>
-            )}
+            {reserved.released
+              ? reserved.bookedBy
+                ? t("board.releasedBookedInfo", {
+                    number: reserved.number,
+                    date: formatDateLong(board.date, locale),
+                    name: reserved.bookedBy,
+                  })
+                : t("board.releasedInfo", {
+                    number: reserved.number,
+                    date: formatDateLong(board.date, locale),
+                  })
+              : t("board.reservedForYouOn", {
+                  number: reserved.number,
+                  date: formatDateLong(board.date, locale),
+                })}
           </p>
           {reserved.released ? (
             <Button
               variant="secondary"
               disabled={busy || !!reserved.bookedBy}
-              title={
-                reserved.bookedBy
-                  ? "A colleague has already booked it for this day"
-                  : undefined
-              }
+              title={reserved.bookedBy ? t("board.reclaimBlocked") : undefined}
               onClick={() =>
                 void runMutation(
                   () =>
@@ -480,11 +478,14 @@ export function BookingBoard({ role }: { role: string }) {
                       `/api/releases?date=${encodeURIComponent(board.date)}`,
                       { method: "DELETE" }
                     ),
-                  `Spot ${reserved.number} reclaimed for ${formatDateHuman(board.date)}.`
+                  t("board.reclaimedFlash", {
+                    number: reserved.number,
+                    date: formatDateHuman(board.date, locale),
+                  })
                 )
               }
             >
-              Reclaim
+              {t("board.reclaim")}
             </Button>
           ) : (
             <Button
@@ -497,11 +498,14 @@ export function BookingBoard({ role }: { role: string }) {
                       method: "POST",
                       body: JSON.stringify({ date: board.date }),
                     }),
-                  `Spot ${reserved.number} released for ${formatDateHuman(board.date)}.`
+                  t("board.releasedFlash", {
+                    number: reserved.number,
+                    date: formatDateHuman(board.date, locale),
+                  })
                 )
               }
             >
-              Release for this day
+              {t("board.releaseForDay")}
             </Button>
           )}
         </div>
@@ -511,25 +515,22 @@ export function BookingBoard({ role }: { role: string }) {
       {pending ? (
         <div className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-card">
           <p className="text-sm text-slate-700">
-            {pending.kind === "book" ? (
-              <>
-                Book spot <span className="font-semibold">{pending.number}</span>{" "}
-                for {formatDateLong(board.date)}?
-              </>
-            ) : (
-              <>
-                Cancel your booking of spot{" "}
-                <span className="font-semibold">{pending.number}</span> for{" "}
-                {formatDateLong(board.date)}?
-              </>
-            )}
+            {pending.kind === "book"
+              ? t("board.confirmBook", {
+                  number: pending.number,
+                  date: formatDateLong(board.date, locale),
+                })
+              : t("board.confirmCancel", {
+                  number: pending.number,
+                  date: formatDateLong(board.date, locale),
+                })}
           </p>
 
           {/* Vehicle picker — a booking always needs a plate */}
           {pending.kind === "book" ? (
             vehicles === null ? (
               <div className="flex items-center gap-2 text-sm text-slate-500">
-                <Spinner className="h-4 w-4" /> Loading your vehicles…
+                <Spinner className="h-4 w-4" /> {t("board.loadingVehicles")}
               </div>
             ) : vehicles.length === 0 ? (
               <div>
@@ -537,7 +538,7 @@ export function BookingBoard({ role }: { role: string }) {
                   htmlFor="board-new-plate"
                   className="mb-1 block text-sm font-medium text-slate-700"
                 >
-                  Add your registration plate
+                  {t("board.addPlateLabel")}
                 </label>
                 <div className="flex gap-2">
                   <input
@@ -545,7 +546,7 @@ export function BookingBoard({ role }: { role: string }) {
                     type="text"
                     value={newPlate}
                     maxLength={12}
-                    placeholder="e.g. PY 1075E"
+                    placeholder={t("common.platePlaceholder")}
                     onChange={(e) => setNewPlate(e.target.value.toUpperCase())}
                     className="min-h-[44px] w-full min-w-0 flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm uppercase text-slate-800 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-200"
                   />
@@ -555,7 +556,7 @@ export function BookingBoard({ role }: { role: string }) {
                     disabled={savingPlate || !newPlate.trim()}
                     onClick={() => void savePlate()}
                   >
-                    {savingPlate ? "Saving…" : "Save"}
+                    {savingPlate ? t("common.saving") : t("common.save")}
                   </Button>
                 </div>
                 {plateError ? (
@@ -565,7 +566,7 @@ export function BookingBoard({ role }: { role: string }) {
             ) : (
               <label className="block">
                 <span className="mb-1 block text-sm font-medium text-slate-700">
-                  Vehicle
+                  {t("common.vehicle")}
                 </span>
                 <select
                   value={vehicleId}
@@ -590,10 +591,10 @@ export function BookingBoard({ role }: { role: string }) {
               onClick={confirmPending}
             >
               {busy
-                ? "Working…"
+                ? t("board.working")
                 : pending.kind === "book"
-                  ? "Book it"
-                  : "Cancel booking"}
+                  ? t("board.bookIt")
+                  : t("board.cancelBooking")}
             </Button>
             <Button
               variant="ghost"
@@ -601,7 +602,7 @@ export function BookingBoard({ role }: { role: string }) {
               disabled={busy}
               onClick={() => setPending(null)}
             >
-              Never mind
+              {t("board.neverMind")}
             </Button>
           </div>
         </div>
@@ -611,11 +612,11 @@ export function BookingBoard({ role }: { role: string }) {
       {board.spots.length === 0 ? (
         <Card>
           <EmptyState
-            title="No active parking spots"
+            title={t("board.noSpotsTitle")}
             hint={
               board.zones.length > 0
-                ? "This zone has no spots yet — try another one."
-                : "An administrator hasn't added any spots yet."
+                ? t("board.zoneEmptyHint")
+                : t("board.noSpotsHint")
             }
           />
         </Card>
@@ -643,26 +644,26 @@ export function BookingBoard({ role }: { role: string }) {
       <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
         <span className="inline-flex items-center gap-1.5">
           <span className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
-          Free
+          {t("board.legendFree")}
         </span>
         <span className="inline-flex items-center gap-1.5">
           <span className="h-2.5 w-2.5 rounded-full bg-rose-400" />
-          Taken
+          {t("board.legendTaken")}
         </span>
         <span className="inline-flex items-center gap-1.5">
           <span className="h-2.5 w-2.5 rounded-full bg-brand-500" />
-          Yours
+          {t("board.legendYours")}
         </span>
       </div>
 
       {role === "MANAGEMENT" || role === "ADMIN" ? (
         <p className="text-xs text-slate-400">
-          Own a reserved spot? Plan future releases on{" "}
+          {t("board.planReleases")}{" "}
           <Link
             href="/my-bookings"
             className="font-medium text-brand-600 hover:underline"
           >
-            Bookings
+            {t("nav.bookings")}
           </Link>
           .
         </p>

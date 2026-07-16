@@ -59,7 +59,7 @@ export async function getBoard(
   viewer: SessionUser,
   zoneId?: string | null
 ): Promise<Board> {
-  if (!isValidISODate(date)) throw badRequest("Invalid date.");
+  if (!isValidISODate(date)) throw badRequest("Invalid date.", "INVALID_DATE");
 
   const [spots, bookings, releases] = await Promise.all([
     prisma.parkingSpot.findMany({
@@ -182,8 +182,8 @@ export async function createBooking(
   date: ISODate,
   vehicleId: string
 ) {
-  if (!isValidISODate(date)) throw badRequest("Invalid date.");
-  if (isWeekend(date)) throw badRequest("Parking can't be booked for weekends.");
+  if (!isValidISODate(date)) throw badRequest("Invalid date.", "INVALID_DATE");
+  if (isWeekend(date)) throw badRequest("Parking can't be booked for weekends.", "WEEKEND");
   if (!isBookableDate(date)) {
     throw badRequest(
       "Spots can only be booked up to 2 business days in advance.",
@@ -194,7 +194,7 @@ export async function createBooking(
   const vehicle = await requireOwnVehicleForBooking(viewer, vehicleId);
 
   const spot = await prisma.parkingSpot.findUnique({ where: { id: spotId } });
-  if (!spot || !spot.isActive) throw notFound("This parking spot doesn't exist.");
+  if (!spot || !spot.isActive) throw notFound("This parking spot doesn't exist.", "SPOT_NOT_FOUND");
 
   // On prebook days the owner's spot is either still theirs (nothing to book)
   // or released (they reclaim instead of booking). On other weekdays the
@@ -207,7 +207,7 @@ export async function createBooking(
       released
         ? "This is your reserved spot — use “Reclaim” instead of booking it."
         : "This spot is already reserved for you that day.",
-      "OWN_SPOT"
+      released ? "OWN_SPOT_RELEASED" : "OWN_SPOT_RESERVED"
     );
   }
 
@@ -224,7 +224,8 @@ export async function createBooking(
       if (!released) {
         throw conflict(
           `You already have your reserved spot ${owned.number} that day. Release it first if you want a different one.`,
-          "HAS_RESERVED_SPOT"
+          "HAS_RESERVED_SPOT",
+          { number: owned.number }
         );
       }
     }
@@ -237,7 +238,7 @@ export async function createBooking(
     const booking = await serializableTx(async (tx) => {
       const freshSpot = await tx.parkingSpot.findUnique({ where: { id: spotId } });
       if (!freshSpot || !freshSpot.isActive) {
-        throw notFound("This parking spot doesn't exist.");
+        throw notFound("This parking spot doesn't exist.", "SPOT_NOT_FOUND");
       }
       if (freshSpot.ownerId && isPrebookDay(freshSpot.prebookDays, date)) {
         const release = await tx.spotRelease.findUnique({
@@ -246,7 +247,8 @@ export async function createBooking(
         if (!release) {
           throw conflict(
             `Spot ${freshSpot.number} is reserved for a management member that day.`,
-            "SPOT_RESERVED"
+            "SPOT_RESERVED",
+            { number: freshSpot.number }
           );
         }
       }
@@ -284,11 +286,11 @@ export async function createBooking(
       );
     }
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2034") {
-      throw conflict("The parking board is busy — please try again.");
+      throw conflict("The parking board is busy — please try again.", "BOARD_BUSY");
     }
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2003") {
       // The chosen vehicle was deleted between validation and the insert.
-      throw badRequest("That vehicle was just removed — pick another.", "VEHICLE_REQUIRED");
+      throw badRequest("That vehicle was just removed — pick another.", "VEHICLE_GONE");
     }
     throw err;
   }
@@ -308,8 +310,8 @@ export async function quickBook(
   // Validate everything up-front, before touching occupancy data — otherwise
   // the ZONE_FULL/window error ordering would let anyone probe historical
   // occupancy, and a missing vehicle would surface as the wrong error.
-  if (!isValidISODate(date)) throw badRequest("Invalid date.");
-  if (isWeekend(date)) throw badRequest("Parking can't be booked for weekends.");
+  if (!isValidISODate(date)) throw badRequest("Invalid date.", "INVALID_DATE");
+  if (isWeekend(date)) throw badRequest("Parking can't be booked for weekends.", "WEEKEND");
   if (!isBookableDate(date)) {
     throw badRequest(
       "Spots can only be booked up to 2 business days in advance.",
@@ -347,7 +349,8 @@ export async function quickBook(
         (err.code === "SPOT_TAKEN" ||
           err.code === "SPOT_RESERVED" ||
           // spot deleted/deactivated since the candidate query
-          err.code === "NOT_FOUND")
+          err.code === "NOT_FOUND" ||
+          err.code === "SPOT_NOT_FOUND")
       ) {
         continue; // this spot fell through — try the next one
       }
@@ -368,16 +371,16 @@ export async function cancelBooking(viewer: SessionUser, bookingId: string) {
       user: { select: { email: true } },
     },
   });
-  if (!booking) throw notFound("Booking not found.");
+  if (!booking) throw notFound("Booking not found.", "BOOKING_NOT_FOUND");
 
   const isOwn = booking.userId === viewer.id;
   if (!isOwn && viewer.role !== "ADMIN") {
-    throw forbidden("You can only cancel your own bookings.");
+    throw forbidden("You can only cancel your own bookings.", "CANCEL_FORBIDDEN");
   }
 
   const today = todayInOfficeTz();
   if (booking.date < today) {
-    throw badRequest("Past bookings can't be cancelled.");
+    throw badRequest("Past bookings can't be cancelled.", "CANCEL_PAST");
   }
 
   try {
@@ -385,7 +388,7 @@ export async function cancelBooking(viewer: SessionUser, bookingId: string) {
   } catch (err) {
     // Already cancelled by a concurrent request.
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2025") {
-      throw notFound("Booking not found.");
+      throw notFound("Booking not found.", "BOOKING_NOT_FOUND");
     }
     throw err;
   }
@@ -507,24 +510,26 @@ async function findOwnedSpotOrThrow(viewer: SessionUser) {
   const spot = await prisma.parkingSpot.findFirst({
     where: { ownerId: viewer.id, isActive: true },
   });
-  if (!spot) throw forbidden("You don't have a reserved spot.");
+  if (!spot) throw forbidden("You don't have a reserved spot.", "NO_RESERVED_SPOT");
   return spot;
 }
 
 export async function releaseSpot(viewer: SessionUser, date: ISODate) {
-  if (!isValidISODate(date)) throw badRequest("Invalid date.");
+  if (!isValidISODate(date)) throw badRequest("Invalid date.", "INVALID_DATE");
   const spot = await findOwnedSpotOrThrow(viewer);
 
   const today = todayInOfficeTz();
-  if (date < today) throw badRequest("You can't release a spot for a past day.");
+  if (date < today) throw badRequest("You can't release a spot for a past day.", "RELEASE_PAST");
   if (date > addDays(today, RELEASE_HORIZON_DAYS)) {
     throw badRequest(
-      `Releases can be made at most ${RELEASE_HORIZON_DAYS} days in advance.`
+      `Releases can be made at most ${RELEASE_HORIZON_DAYS} days in advance.`,
+      "RELEASE_HORIZON",
+      { days: RELEASE_HORIZON_DAYS }
     );
   }
-  if (isWeekend(date)) throw badRequest("Weekends aren't working days.");
+  if (isWeekend(date)) throw badRequest("Weekends aren't working days.", "WEEKEND");
   if (!isPrebookDay(spot.prebookDays, date)) {
-    throw badRequest("Your spot isn't prebooked for you on that day.");
+    throw badRequest("Your spot isn't prebooked for you on that day.", "NOT_PREBOOK_DAY");
   }
 
   try {
@@ -540,18 +545,18 @@ export async function releaseSpot(viewer: SessionUser, date: ISODate) {
     return release;
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
-      throw conflict("You already released your spot for that day.");
+      throw conflict("You already released your spot for that day.", "ALREADY_RELEASED");
     }
     throw err;
   }
 }
 
 export async function reclaimSpot(viewer: SessionUser, date: ISODate) {
-  if (!isValidISODate(date)) throw badRequest("Invalid date.");
+  if (!isValidISODate(date)) throw badRequest("Invalid date.", "INVALID_DATE");
   const spot = await findOwnedSpotOrThrow(viewer);
 
   const today = todayInOfficeTz();
-  if (date < today) throw badRequest("You can't reclaim a spot for a past day.");
+  if (date < today) throw badRequest("You can't reclaim a spot for a past day.", "RECLAIM_PAST");
 
   try {
     // Serializable: pairs with createBooking's transaction so a colleague's
@@ -560,7 +565,7 @@ export async function reclaimSpot(viewer: SessionUser, date: ISODate) {
       const release = await tx.spotRelease.findUnique({
         where: { spotId_date: { spotId: spot.id, date } },
       });
-      if (!release) throw notFound("Your spot isn't released for that day.");
+      if (!release) throw notFound("Your spot isn't released for that day.", "NOT_RELEASED");
 
       const booking = await tx.booking.findUnique({
         where: { spotId_date: { spotId: spot.id, date } },
@@ -569,7 +574,8 @@ export async function reclaimSpot(viewer: SessionUser, date: ISODate) {
       if (booking) {
         throw conflict(
           `${booking.user.name ?? booking.user.email} has already booked your spot for that day.`,
-          "SPOT_ALREADY_BOOKED"
+          "SPOT_ALREADY_BOOKED",
+          { name: booking.user.name ?? booking.user.email }
         );
       }
 
@@ -582,7 +588,8 @@ export async function reclaimSpot(viewer: SessionUser, date: ISODate) {
       if (myOtherBooking) {
         throw conflict(
           `You already booked spot ${myOtherBooking.spot.number} for that day — cancel it before reclaiming your own spot.`,
-          "HAS_OTHER_BOOKING"
+          "HAS_OTHER_BOOKING",
+          { number: myOtherBooking.spot.number }
         );
       }
 
@@ -590,7 +597,7 @@ export async function reclaimSpot(viewer: SessionUser, date: ISODate) {
     });
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2034") {
-      throw conflict("The parking board is busy — please try again.");
+      throw conflict("The parking board is busy — please try again.", "BOARD_BUSY");
     }
     throw err;
   }

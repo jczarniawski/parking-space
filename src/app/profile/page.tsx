@@ -3,7 +3,9 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth, signOut } from "@/auth";
 import { Badge } from "@/components/ui";
+import { LanguageSwitcher } from "@/components/language-switcher";
 import { VehiclesManager } from "@/components/vehicles-manager";
+import { getT } from "@/lib/i18n/server";
 
 export const dynamic = "force-dynamic";
 
@@ -11,10 +13,10 @@ export const metadata: Metadata = { title: "Profile" };
 
 type RoleTone = "slate" | "blue" | "purple";
 
-const ROLE_BADGES: Record<string, { label: string; tone: RoleTone }> = {
-  EMPLOYEE: { label: "Employee", tone: "slate" },
-  MANAGEMENT: { label: "Management", tone: "purple" },
-  ADMIN: { label: "Admin", tone: "blue" },
+const ROLE_TONES: Record<string, RoleTone> = {
+  EMPLOYEE: "slate",
+  MANAGEMENT: "purple",
+  ADMIN: "blue",
 };
 
 // ---------- Icons (inline, no icon library) ----------
@@ -70,15 +72,19 @@ function SignOutIcon({ className }: { className?: string }) {
 export default async function ProfilePage() {
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
+  const t = await getT();
 
   const user = session.user;
   const displayName = user.name ?? user.email ?? "Account";
-  const role = ROLE_BADGES[user.role] ?? ROLE_BADGES.EMPLOYEE;
+  const roleKey = ["EMPLOYEE", "MANAGEMENT", "ADMIN"].includes(user.role)
+    ? user.role
+    : "EMPLOYEE";
+  const roleTone = ROLE_TONES[roleKey] ?? "slate";
   const initial = (displayName.trim()[0] ?? "?").toUpperCase();
 
   return (
     <div className="mx-auto w-full max-w-md space-y-4">
-      <h1 className="px-1 text-xl font-semibold text-slate-900">Profile</h1>
+      <h1 className="px-1 text-xl font-semibold text-slate-900">{t("profile.title")}</h1>
 
       {/* Who am I */}
       <section className="flex items-center gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-card">
@@ -101,14 +107,33 @@ export default async function ProfilePage() {
           {user.email ? (
             <p className="truncate text-sm text-slate-500">{user.email}</p>
           ) : null}
-          <Badge tone={role.tone} className="mt-1.5">
-            {role.label}
+          <Badge tone={roleTone} className="mt-1.5">
+            {t(
+              roleKey === "ADMIN"
+                ? "profile.role.ADMIN"
+                : roleKey === "MANAGEMENT"
+                  ? "profile.role.MANAGEMENT"
+                  : "profile.role.EMPLOYEE"
+            )}
           </Badge>
         </div>
       </section>
 
       {/* Plates */}
       <VehiclesManager />
+
+      {/* Language */}
+      <section className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-card">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-slate-800">
+            {t("profile.language")}
+          </p>
+          <p className="mt-0.5 text-xs text-slate-500">
+            {t("profile.languageHint")}
+          </p>
+        </div>
+        <LanguageSwitcher />
+      </section>
 
       {/* Admin entry point — the bottom nav has no admin tab on purpose. */}
       {user.role === "ADMIN" ? (
@@ -121,10 +146,10 @@ export default async function ProfilePage() {
           </span>
           <span className="min-w-0 flex-1">
             <span className="block text-sm font-semibold text-slate-800">
-              Admin panel
+              {t("profile.adminPanel")}
             </span>
             <span className="block text-xs text-slate-500">
-              Zones, spots, people and all bookings
+              {t("profile.adminPanelHint")}
             </span>
           </span>
           <ChevronRightIcon className="h-5 w-5 shrink-0 text-slate-300" />
@@ -138,14 +163,14 @@ export default async function ProfilePage() {
         </span>
         <div className="min-w-0">
           <p className="text-sm font-semibold text-slate-800">
-            Install on your phone
+            {t("profile.install")}
           </p>
           <p className="mt-0.5 text-xs leading-relaxed text-slate-500">
-            Open your browser menu and choose{" "}
+            {t("profile.installHintPrefix")}{" "}
             <span className="font-medium text-slate-700">
-              &ldquo;Add to Home Screen&rdquo;
+              {t("profile.installHintAction")}
             </span>{" "}
-            to use MT Parking like a native app.
+            {t("profile.installHintSuffix")}
           </p>
         </div>
       </section>
@@ -164,7 +189,7 @@ export default async function ProfilePage() {
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-red-50 text-red-600">
             <SignOutIcon className="h-5 w-5" />
           </span>
-          <span className="text-sm font-semibold text-red-600">Sign out</span>
+          <span className="text-sm font-semibold text-red-600">{t("nav.signOut")}</span>
         </button>
       </form>
     </div>

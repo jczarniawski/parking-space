@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { formatDateHuman, relativeDayLabel } from "@/lib/dates";
+import { useLocale } from "@/components/locale-provider";
 import { Button, Card, EmptyState, Spinner, apiFetch } from "@/components/ui";
 
 type MyBooking = {
@@ -40,6 +41,7 @@ function CarIcon({ className }: { className?: string }) {
 }
 
 export function MyBookingsList() {
+  const { t, locale } = useLocale();
   const [bookings, setBookings] = useState<MyBooking[] | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -51,11 +53,12 @@ export function MyBookingsList() {
       const data = await apiFetch<{ bookings: MyBooking[] }>("/api/bookings");
       setBookings(data.bookings);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong.");
+      setError(err instanceof Error ? err.message : t("common.somethingWentWrong"));
     } finally {
       setLoaded(true);
     }
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [t]);
 
   useEffect(() => {
     void load();
@@ -75,7 +78,7 @@ export function MyBookingsList() {
         method: "DELETE",
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong.");
+      setError(err instanceof Error ? err.message : t("common.somethingWentWrong"));
     } finally {
       setCancellingId(null);
       setConfirmId(null);
@@ -95,12 +98,12 @@ export function MyBookingsList() {
     return (
       <Card>
         <EmptyState
-          title="Couldn't load your bookings"
-          hint={error ?? "Please try again."}
+          title={t("myb.loadFailedTitle")}
+          hint={error ?? t("start.pleaseRetry")}
         />
         <div className="flex justify-center pb-8">
           <Button variant="secondary" onClick={() => void load()}>
-            Try again
+            {t("common.tryAgain")}
           </Button>
         </div>
       </Card>
@@ -124,26 +127,26 @@ export function MyBookingsList() {
 
       <section className="space-y-3">
         <h2 className="px-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
-          Upcoming
+          {t("myb.upcoming")}
         </h2>
         {upcoming.length === 0 ? (
           <div className="rounded-2xl border border-slate-200 bg-white shadow-card">
             <EmptyState
-              title="No upcoming bookings"
-              hint="Grab a spot with Quick book or from the parking board."
+              title={t("myb.noUpcoming")}
+              hint={t("myb.noUpcomingHint")}
             />
             <div className="flex justify-center gap-2 pb-8">
               <Link
                 href="/book"
                 className="inline-flex min-h-[44px] items-center justify-center rounded-xl bg-accent-600 px-5 text-sm font-semibold text-white transition-colors hover:bg-accent-700"
               >
-                Quick book
+                {t("start.quickBook")}
               </Link>
               <Link
                 href="/board"
                 className="inline-flex min-h-[44px] items-center justify-center rounded-xl border border-slate-300 bg-white px-5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
               >
-                Open board
+                {t("myb.openBoard")}
               </Link>
             </div>
           </div>
@@ -160,14 +163,14 @@ export function MyBookingsList() {
                   </span>
                   <div className="min-w-0">
                     <p className="truncate text-sm font-semibold text-slate-800">
-                      Spot {b.spotNumber}
+                      {t("common.spot", { number: b.spotNumber })}
                       <span className="font-normal text-slate-500">
                         {" "}
-                        · {b.zoneName ?? "Parking"}
+                        · {b.zoneName ?? t("common.parking")}
                       </span>
                     </p>
                     <p className="truncate text-sm text-slate-500">
-                      {relativeDayLabel(b.date)}
+                      {relativeDayLabel(b.date, locale)}
                       {b.plate ? ` · ${b.plate}` : null}
                     </p>
                   </div>
@@ -179,14 +182,14 @@ export function MyBookingsList() {
                     disabled={cancellingId !== null}
                     onClick={() => setConfirmId(b.id)}
                   >
-                    Cancel
+                    {t("common.cancel")}
                   </Button>
                 ) : null}
               </div>
               {b.canCancel && confirmId === b.id ? (
                 <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-red-100 bg-red-50 px-3 py-2.5">
                   <p className="text-sm font-medium text-red-700">
-                    Cancel this booking?
+                    {t("start.cancelConfirm")}
                   </p>
                   <div className="flex gap-1.5">
                     <Button
@@ -194,14 +197,14 @@ export function MyBookingsList() {
                       disabled={cancellingId === b.id}
                       onClick={() => void cancel(b.id)}
                     >
-                      {cancellingId === b.id ? "Cancelling…" : "Cancel it"}
+                      {cancellingId === b.id ? t("start.cancelling") : t("start.cancelIt")}
                     </Button>
                     <Button
                       variant="ghost"
                       disabled={cancellingId === b.id}
                       onClick={() => setConfirmId(null)}
                     >
-                      Keep
+                      {t("common.keep")}
                     </Button>
                   </div>
                 </div>
@@ -213,11 +216,11 @@ export function MyBookingsList() {
 
       <section className="space-y-3">
         <h2 className="px-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
-          Past
+          {t("myb.past")}
         </h2>
         <div className="rounded-2xl border border-slate-200 bg-white px-4 shadow-card">
           {past.length === 0 ? (
-            <EmptyState title="No past bookings yet" />
+            <EmptyState title={t("myb.noPast")} />
           ) : (
             <ul className="divide-y divide-slate-100">
               {past.map((b) => (
@@ -229,19 +232,19 @@ export function MyBookingsList() {
                     <CarIcon className="h-5 w-5 shrink-0 text-slate-300" />
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium text-slate-500">
-                        Spot {b.spotNumber}
+                        {t("common.spot", { number: b.spotNumber })}
                         <span className="font-normal text-slate-400">
                           {" "}
-                          · {b.zoneName ?? "Parking"}
+                          · {b.zoneName ?? t("common.parking")}
                         </span>
                       </p>
                       <p className="truncate text-xs text-slate-400">
-                        {formatDateHuman(b.date)}
+                        {formatDateHuman(b.date, locale)}
                         {b.plate ? ` · ${b.plate}` : null}
                       </p>
                     </div>
                   </div>
-                  <span className="shrink-0 text-xs text-slate-400">Past</span>
+                  <span className="shrink-0 text-xs text-slate-400">{t("myb.pastLabel")}</span>
                 </li>
               ))}
             </ul>

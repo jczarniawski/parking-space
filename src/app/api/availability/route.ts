@@ -18,7 +18,7 @@ export const GET = handleApi(async (req: NextRequest) => {
   if (viewer.role !== "ADMIN" && !bookableDates.includes(date)) {
     throw badRequest(
       "Only dates in the current booking window can be viewed.",
-      "OUTSIDE_WINDOW"
+      "VIEW_WINDOW"
     );
   }
   const zoneId = req.nextUrl.searchParams.get("zone");

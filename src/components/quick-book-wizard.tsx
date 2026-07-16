@@ -9,6 +9,7 @@ import { Fragment, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { formatDateHuman, formatDateLong, relativeDayLabel } from "@/lib/dates";
+import { useLocale } from "@/components/locale-provider";
 import { Spinner, apiFetch, cn } from "@/components/ui";
 
 type Zone = { id: string; name: string; spotCount: number };
@@ -23,9 +24,9 @@ type BookingResult = {
 
 // "Today · Tue, 15 Jul", but just "Thu, 17 Jul" when the relative label is
 // already the formatted date.
-function dateLabel(date: string): string {
-  const rel = relativeDayLabel(date);
-  const human = formatDateHuman(date);
+function dateLabel(date: string, locale: "pl" | "en"): string {
+  const rel = relativeDayLabel(date, locale);
+  const human = formatDateHuman(date, locale);
   return rel === human ? human : `${rel} · ${human}`;
 }
 
@@ -136,9 +137,9 @@ function MeetingRoomIcon({ className }: { className?: string }) {
 
 // ---------- Step indicator ----------
 
-function StepDots({ step }: { step: number }) {
+function StepDots({ step, label }: { step: number; label: string }) {
   return (
-    <div className="flex items-center justify-center" aria-label={`Step ${step} of 3`}>
+    <div className="flex items-center justify-center" aria-label={label}>
       {[1, 2, 3].map((n, i) => (
         <Fragment key={n}>
           {i > 0 ? (
@@ -167,6 +168,7 @@ function StepDots({ step }: { step: number }) {
 
 export function QuickBookWizard() {
   const router = useRouter();
+  const { t, locale } = useLocale();
 
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [loading, setLoading] = useState(true);
@@ -208,12 +210,13 @@ export function QuickBookWizard() {
       setVehicleId((cur) => cur || (v.vehicles[0]?.id ?? ""));
     } catch (err) {
       setLoadError(
-        err instanceof Error ? err.message : "Something went wrong."
+        err instanceof Error ? err.message : t("common.somethingWentWrong")
       );
     } finally {
       setLoading(false);
     }
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [t]);
 
   useEffect(() => {
     void load();
@@ -238,7 +241,7 @@ export function QuickBookWizard() {
       setPlateInput("");
     } catch (err) {
       setPlateError(
-        err instanceof Error ? err.message : "Couldn't save the plate."
+        err instanceof Error ? err.message : t("qb.plateSaveFailed")
       );
     } finally {
       setSavingPlate(false);
@@ -274,7 +277,7 @@ export function QuickBookWizard() {
       setResult(body.booking);
       setStep(3);
     } catch {
-      setSubmitError("Something went wrong. Check your connection and try again.");
+      setSubmitError(t("common.connectionError"));
     } finally {
       setSubmitting(false);
     }
@@ -295,15 +298,15 @@ export function QuickBookWizard() {
         <button
           type="button"
           onClick={() => router.back()}
-          aria-label="Go back"
+          aria-label={t("qb.goBack")}
           className="absolute left-0 flex h-11 w-11 items-center justify-center rounded-full text-slate-600 transition-colors hover:bg-slate-100"
         >
           <BackIcon className="h-5 w-5" />
         </button>
-        <h1 className="text-base font-semibold text-slate-900">Quick booking</h1>
+        <h1 className="text-base font-semibold text-slate-900">{t("qb.title")}</h1>
       </div>
 
-      <StepDots step={step} />
+      <StepDots step={step} label={t("qb.stepOf", { step })} />
 
       {loading ? (
         <div className="flex justify-center py-16">
@@ -318,7 +321,7 @@ export function QuickBookWizard() {
             {loadError}
           </div>
           <button type="button" className={brandBtn} onClick={() => void load()}>
-            Try again
+            {t("common.tryAgain")}
           </button>
         </div>
       ) : step === 1 ? (
@@ -332,25 +335,25 @@ export function QuickBookWizard() {
               className="flex flex-col items-center gap-1.5 rounded-2xl bg-brand-700 px-2 py-3.5 text-white shadow-card"
             >
               <CarIcon className="h-6 w-6" />
-              <span className="text-xs font-medium">Parking</span>
+              <span className="text-xs font-medium">{t("qb.parking")}</span>
             </button>
             <button
               type="button"
               disabled
-              title="Coming soon"
+              title={t("qb.comingSoon")}
               className="flex cursor-not-allowed flex-col items-center gap-1.5 rounded-2xl border border-slate-200 bg-slate-50 px-2 py-3.5 text-slate-400"
             >
               <DeskIcon className="h-6 w-6" />
-              <span className="text-xs font-medium">Desk</span>
+              <span className="text-xs font-medium">{t("qb.desk")}</span>
             </button>
             <button
               type="button"
               disabled
-              title="Coming soon"
+              title={t("qb.comingSoon")}
               className="flex cursor-not-allowed flex-col items-center gap-1.5 rounded-2xl border border-slate-200 bg-slate-50 px-2 py-3.5 text-slate-400"
             >
               <MeetingRoomIcon className="h-6 w-6" />
-              <span className="text-xs font-medium">Meeting room</span>
+              <span className="text-xs font-medium">{t("qb.meetingRoom")}</span>
             </button>
           </div>
 
@@ -358,7 +361,7 @@ export function QuickBookWizard() {
           {zones.length > 0 ? (
             <div>
               <label htmlFor="qb-zone" className={labelClass}>
-                Zone
+                {t("common.zone")}
               </label>
               <select
                 id="qb-zone"
@@ -378,7 +381,7 @@ export function QuickBookWizard() {
           {/* Date */}
           <div>
             <label htmlFor="qb-date" className={labelClass}>
-              Date
+              {t("common.date")}
             </label>
             <select
               id="qb-date"
@@ -388,7 +391,7 @@ export function QuickBookWizard() {
             >
               {dates.map((d) => (
                 <option key={d} value={d}>
-                  {dateLabel(d)}
+                  {dateLabel(d, locale)}
                 </option>
               ))}
             </select>
@@ -396,9 +399,9 @@ export function QuickBookWizard() {
 
           {/* Type — always "All day" for now */}
           <div>
-            <span className={labelClass}>Type</span>
+            <span className={labelClass}>{t("common.type")}</span>
             <div className="flex h-12 w-full items-center justify-between rounded-full border border-brand-600 bg-brand-50 px-4 text-sm font-medium text-brand-800">
-              <span>All day</span>
+              <span>{t("common.allDay")}</span>
               <CheckIcon className="h-5 w-5 text-brand-700" />
             </div>
           </div>
@@ -407,7 +410,7 @@ export function QuickBookWizard() {
           {vehicles.length > 0 ? (
             <div>
               <label htmlFor="qb-vehicle" className={labelClass}>
-                Vehicle
+                {t("common.vehicle")}
               </label>
               <select
                 id="qb-vehicle"
@@ -425,10 +428,10 @@ export function QuickBookWizard() {
           ) : (
             <div>
               <label htmlFor="qb-plate" className={labelClass}>
-                Vehicle
+                {t("common.vehicle")}
               </label>
               <p className="mb-2 text-xs text-slate-500">
-                Add your registration plate to book parking.
+                {t("qb.addPlateHint")}
               </p>
               <div className="flex gap-2">
                 <input
@@ -436,7 +439,7 @@ export function QuickBookWizard() {
                   value={plateInput}
                   onChange={(e) => setPlateInput(e.target.value.toUpperCase())}
                   maxLength={12}
-                  placeholder="e.g. PY 1075E"
+                  placeholder={t("common.platePlaceholder")}
                   className="h-12 min-w-0 flex-1 rounded-xl border border-slate-300 bg-white px-3.5 text-sm uppercase text-slate-900 placeholder:normal-case focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-200"
                 />
                 <button
@@ -445,7 +448,7 @@ export function QuickBookWizard() {
                   disabled={savingPlate || !plateInput.trim()}
                   onClick={() => void savePlate()}
                 >
-                  {savingPlate ? "Saving…" : "Save"}
+                  {savingPlate ? t("common.saving") : t("common.save")}
                 </button>
               </div>
               {plateError ? (
@@ -457,7 +460,7 @@ export function QuickBookWizard() {
           {/* Footer */}
           <div className="flex gap-2 pt-1">
             <Link href="/" className={ghostBtn}>
-              Cancel
+              {t("common.cancel")}
             </Link>
             <button
               type="button"
@@ -469,7 +472,7 @@ export function QuickBookWizard() {
                 setStep(2);
               }}
             >
-              Next
+              {t("common.next")}
             </button>
           </div>
         </div>
@@ -479,38 +482,36 @@ export function QuickBookWizard() {
           <div className="divide-y divide-slate-100 rounded-2xl border border-slate-200 bg-white px-5 shadow-card">
             {zones.length > 0 ? (
               <div className="flex items-center justify-between py-3.5">
-                <span className="text-sm text-slate-500">Zone</span>
+                <span className="text-sm text-slate-500">{t("common.zone")}</span>
                 <span className="text-sm font-medium text-slate-800">
                   {selectedZone?.name ?? "—"}
                 </span>
               </div>
             ) : null}
             <div className="flex items-center justify-between py-3.5">
-              <span className="text-sm text-slate-500">Date</span>
+              <span className="text-sm text-slate-500">{t("common.date")}</span>
               <span className="text-sm font-medium text-slate-800">
-                {dateLabel(date)}
+                {dateLabel(date, locale)}
               </span>
             </div>
             <div className="flex items-center justify-between py-3.5">
-              <span className="text-sm text-slate-500">Type</span>
-              <span className="text-sm font-medium text-slate-800">All day</span>
+              <span className="text-sm text-slate-500">{t("common.type")}</span>
+              <span className="text-sm font-medium text-slate-800">{t("common.allDay")}</span>
             </div>
             <div className="flex items-center justify-between py-3.5">
-              <span className="text-sm text-slate-500">Vehicle</span>
+              <span className="text-sm text-slate-500">{t("common.vehicle")}</span>
               <span className="text-sm font-medium text-slate-800">
                 {selectedVehicle?.plate ?? "—"}
               </span>
             </div>
           </div>
 
-          <p className="text-sm text-slate-500">
-            A free spot will be assigned automatically.
-          </p>
+          <p className="text-sm text-slate-500">{t("qb.autoAssignNote")}</p>
           <Link
             href="/board"
             className="inline-block text-sm font-medium text-brand-600 hover:underline"
           >
-            …or pick a specific spot on the board
+            {t("qb.pickOnBoard")}
           </Link>
 
           {submitError ? (
@@ -530,13 +531,13 @@ export function QuickBookWizard() {
                       setStep(1);
                     }}
                   >
-                    Change zone
+                    {t("qb.changeZone")}
                   </button>
                   <Link
                     href="/board"
                     className="rounded-lg border border-red-200 bg-white px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-100"
                   >
-                    Open board
+                    {t("qb.openBoard")}
                   </Link>
                 </div>
               ) : null}
@@ -554,7 +555,7 @@ export function QuickBookWizard() {
                 setStep(1);
               }}
             >
-              Back
+              {t("common.back")}
             </button>
             <button
               type="button"
@@ -562,7 +563,7 @@ export function QuickBookWizard() {
               disabled={submitting}
               onClick={() => void submit()}
             >
-              {submitting ? "Booking…" : "Confirm booking"}
+              {submitting ? t("qb.booking") : t("qb.confirmBooking")}
             </button>
           </div>
         </div>
@@ -574,14 +575,14 @@ export function QuickBookWizard() {
               <CheckIcon className="h-8 w-8 text-emerald-600" />
             </div>
             <p className="text-sm font-medium text-emerald-700">
-              Booking confirmed
+              {t("qb.confirmed")}
             </p>
             <p className="text-5xl font-bold tracking-tight text-slate-800">
-              Spot {result?.spotNumber ?? "—"}
+              {t("common.spot", { number: result?.spotNumber ?? "—" })}
             </p>
             <p className="text-sm text-slate-500">
               {result?.zoneName ? `${result.zoneName} · ` : ""}
-              {result ? formatDateLong(result.date) : ""}
+              {result ? formatDateLong(result.date, locale) : ""}
             </p>
             {result?.plate ? (
               <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500">
@@ -592,10 +593,10 @@ export function QuickBookWizard() {
 
           <div className="flex gap-2 pt-1">
             <button type="button" className={ghostBtn} onClick={bookAnother}>
-              Book another
+              {t("qb.bookAnother")}
             </button>
             <Link href="/" className={cn(accentBtn, "flex-1")}>
-              Done
+              {t("common.done")}
             </Link>
           </div>
         </div>

@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { auth, signIn } from "@/auth";
+import { ALLOWED_DOMAIN, auth, signIn } from "@/auth";
+import { LanguageSwitcher } from "@/components/language-switcher";
+import { getT } from "@/lib/i18n/server";
 import { Button } from "@/components/ui";
 
 export const metadata: Metadata = {
@@ -40,6 +42,8 @@ export default async function LoginPage({
 
   const { error } = await searchParams;
   const devLoginEnabled = process.env.AUTH_DEV_LOGIN === "true";
+  const t = await getT();
+  const domain = ALLOWED_DOMAIN;
 
   return (
     // Full-screen navy brand backdrop; `fixed` escapes the layout's <main>
@@ -63,8 +67,8 @@ export default async function LoginPage({
           {error ? (
             <div className="mt-6 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
               {error === "AccessDenied"
-                ? "That account can't sign in here. Use your @match-trade.com Google account."
-                : "Sign-in failed. Use your @match-trade.com Google account."}
+                ? t("login.accessDenied", { domain })
+                : t("login.failed", { domain })}
             </div>
           ) : null}
 
@@ -81,19 +85,23 @@ export default async function LoginPage({
               className="w-full gap-2 py-2.5"
             >
               <GoogleIcon />
-              Sign in with Google
+              {t("login.google")}
             </Button>
           </form>
 
           <p className="mt-3 text-center text-xs text-slate-400">
-            Only @match-trade.com accounts can sign in.
+            {t("login.onlyDomain", { domain })}
           </p>
+
+          <div className="mt-5 flex justify-center">
+            <LanguageSwitcher compact />
+          </div>
 
           {devLoginEnabled ? (
             <>
               <div className="mt-6 flex items-center gap-3 text-xs uppercase tracking-wide text-slate-400">
                 <span className="h-px flex-1 bg-slate-200" />
-                Dev login
+                {t("login.devDivider")}
                 <span className="h-px flex-1 bg-slate-200" />
               </div>
               <form
@@ -112,7 +120,7 @@ export default async function LoginPage({
                   className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
                 />
                 <Button type="submit" variant="primary" className="w-full">
-                  Sign in as dev user
+                  {t("login.devButton")}
                 </Button>
               </form>
             </>

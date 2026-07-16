@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { useLocale } from "@/components/locale-provider";
 import { Button, Card } from "@/components/ui";
 
 export default function ErrorPage({
@@ -10,6 +11,7 @@ export default function ErrorPage({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  const { t } = useLocale();
   useEffect(() => {
     console.error(error);
   }, [error]);
@@ -20,16 +22,16 @@ export default function ErrorPage({
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/logo.svg" alt="" className="mx-auto h-12 w-12" />
         <h1 className="mt-4 text-lg font-semibold text-slate-900">
-          Something went wrong
+          {t("errpg.title")}
         </h1>
-        <p className="mt-1 text-sm text-slate-500">
-          An unexpected error occurred. You can try again, or come back later.
-        </p>
+        <p className="mt-1 text-sm text-slate-500">{t("errpg.hint")}</p>
         {error.digest ? (
-          <p className="mt-2 text-xs text-slate-400">Error ID: {error.digest}</p>
+          <p className="mt-2 text-xs text-slate-400">
+            {t("errpg.errorId", { id: error.digest })}
+          </p>
         ) : null}
         <Button onClick={reset} className="mt-6 min-h-[44px] w-full">
-          Try again
+          {t("common.tryAgain")}
         </Button>
       </Card>
     </div>

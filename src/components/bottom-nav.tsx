@@ -3,6 +3,7 @@
 import type { ComponentType } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useLocale } from "@/components/locale-provider";
 import { cn } from "@/components/ui";
 
 // Mobile-app style bottom navigation, shown on all signed-in pages at every
@@ -123,6 +124,7 @@ export default function BottomNav({
   isAdmin: boolean;
 }) {
   const pathname = usePathname();
+  const { t } = useLocale();
   if (!signedIn) return null;
 
   const isActive = (href: string) =>
@@ -134,28 +136,28 @@ export default function BottomNav({
 
   return (
     <nav
-      aria-label="Primary"
+      aria-label={t("nav.primary")}
       className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white pb-safe"
     >
       <div className="mx-auto grid h-16 w-full max-w-md grid-cols-5 items-stretch px-2">
-        <NavItem href="/" label="Start" active={isActive("/")} icon={HomeIcon} />
+        <NavItem href="/" label={t("nav.start")} active={isActive("/")} icon={HomeIcon} />
         <NavItem
           href="/my-bookings"
-          label="Bookings"
+          label={t("nav.bookings")}
           active={isActive("/my-bookings")}
           icon={CalendarIcon}
         />
         <div className="relative flex items-center justify-center">
           <Link
             href="/book"
-            aria-label="Quick booking"
+            aria-label={t("nav.quickBooking")}
             className="absolute -top-7 flex h-14 w-14 items-center justify-center rounded-full bg-accent-600 text-white shadow-fab transition-colors hover:bg-accent-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-600"
           >
             <PlusIcon />
           </Link>
         </div>
-        <NavItem href="/board" label="Board" active={isActive("/board")} icon={GridIcon} />
-        <NavItem href="/profile" label="Profile" active={profileActive} icon={PersonIcon} />
+        <NavItem href="/board" label={t("nav.board")} active={isActive("/board")} icon={GridIcon} />
+        <NavItem href="/profile" label={t("nav.profile")} active={profileActive} icon={PersonIcon} />
       </div>
     </nav>
   );

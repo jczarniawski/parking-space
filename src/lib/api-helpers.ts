@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { ApiError, unauthorized, forbidden } from "@/lib/errors";
+import { apiErrorMessage } from "@/lib/i18n";
+import { getLocale } from "@/lib/i18n/server";
 
 export type SessionUser = {
   id: string;
@@ -30,15 +32,27 @@ export function handleApi<Args extends unknown[]>(
     try {
       return await fn(...args);
     } catch (err) {
+      // Errors are localized here (from the request's locale cookie) so every
+      // screen shows them in the user's language; the service-layer English
+      // message is the fallback for codes without a translation.
+      const locale = await getLocale().catch(() => "pl" as const);
       if (err instanceof ApiError) {
         return NextResponse.json(
-          { error: err.message, code: err.code },
+          {
+            error: apiErrorMessage(locale, err.code, err.params) ?? err.message,
+            code: err.code,
+          },
           { status: err.status }
         );
       }
       console.error("Unhandled API error:", err);
       return NextResponse.json(
-        { error: "Something went wrong. Please try again.", code: "INTERNAL" },
+        {
+          error:
+            apiErrorMessage(locale, "INTERNAL") ??
+            "Something went wrong. Please try again.",
+          code: "INTERNAL",
+        },
         { status: 500 }
       );
     }

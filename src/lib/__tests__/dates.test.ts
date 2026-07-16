@@ -308,41 +308,52 @@ describe("isValidISODate", () => {
 });
 
 describe("weekdayShortName", () => {
-  it("names ISO weekdays 1–7", () => {
-    expect(weekdayShortName(1)).toBe("Mon");
-    expect(weekdayShortName(5)).toBe("Fri");
-    expect(weekdayShortName(6)).toBe("Sat");
-    expect(weekdayShortName(7)).toBe("Sun");
+  it("names ISO weekdays 1–7 in English", () => {
+    expect(weekdayShortName(1, "en")).toBe("Mon");
+    expect(weekdayShortName(5, "en")).toBe("Fri");
+    expect(weekdayShortName(6, "en")).toBe("Sat");
+    expect(weekdayShortName(7, "en")).toBe("Sun");
+  });
+
+  it("names ISO weekdays 1–7 in Polish (and by default)", () => {
+    expect(weekdayShortName(1, "pl")).toBe("Pn");
+    expect(weekdayShortName(7, "pl")).toBe("Nd");
+    // Server-side default (no cookie) is Polish.
+    expect(weekdayShortName(3)).toBe("Śr");
   });
 
   it('falls back to "?" outside 1–7', () => {
-    expect(weekdayShortName(0)).toBe("?");
-    expect(weekdayShortName(8)).toBe("?");
+    expect(weekdayShortName(0, "en")).toBe("?");
+    expect(weekdayShortName(8, "pl")).toBe("?");
   });
 });
 
 describe("formatting helpers", () => {
   it("formatDateHuman renders the Y-M-D parts timezone-independently", () => {
-    expect(formatDateHuman("2026-07-14")).toMatch(/^Tue,?\s14\sJul$/);
+    expect(formatDateHuman("2026-07-14", "en")).toMatch(/^Tue,?\s14\sJul$/);
+    expect(formatDateHuman("2026-07-14", "pl")).toMatch(/^wt\.,?\s14\slip/);
   });
 
   it("formatDateLong renders the full date", () => {
-    expect(formatDateLong("2026-07-14")).toMatch(/^Tuesday,?\s14\sJuly\s2026$/);
+    expect(formatDateLong("2026-07-14", "en")).toMatch(/^Tuesday,?\s14\sJuly\s2026$/);
+    expect(formatDateLong("2026-07-14", "pl")).toMatch(/^wtorek,?\s14\slipca\s2026/);
   });
 
   it("relativeDayLabel says Today / Tomorrow relative to the office day", () => {
     const MONDAY = new Date("2026-07-13T10:00:00Z");
-    expect(relativeDayLabel("2026-07-13", MONDAY)).toBe("Today");
-    expect(relativeDayLabel("2026-07-14", MONDAY)).toBe("Tomorrow");
-    expect(relativeDayLabel("2026-07-15", MONDAY)).toBe(
-      formatDateHuman("2026-07-15")
+    expect(relativeDayLabel("2026-07-13", "en", MONDAY)).toBe("Today");
+    expect(relativeDayLabel("2026-07-14", "en", MONDAY)).toBe("Tomorrow");
+    expect(relativeDayLabel("2026-07-13", "pl", MONDAY)).toBe("Dziś");
+    expect(relativeDayLabel("2026-07-14", "pl", MONDAY)).toBe("Jutro");
+    expect(relativeDayLabel("2026-07-15", "en", MONDAY)).toBe(
+      formatDateHuman("2026-07-15", "en")
     );
   });
 
   it("relativeDayLabel respects the office timezone near midnight", () => {
     // 22:30Z on Mon 13 Jul is already Tue 14 Jul in Warsaw.
     const LATE = new Date("2026-07-13T22:30:00Z");
-    expect(relativeDayLabel("2026-07-14", LATE)).toBe("Today");
-    expect(relativeDayLabel("2026-07-15", LATE)).toBe("Tomorrow");
+    expect(relativeDayLabel("2026-07-14", "en", LATE)).toBe("Today");
+    expect(relativeDayLabel("2026-07-15", "en", LATE)).toBe("Tomorrow");
   });
 });

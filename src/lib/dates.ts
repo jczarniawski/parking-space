@@ -137,16 +137,40 @@ export function isPrebookDay(prebookDays: string, date: ISODate): boolean {
   return parsePrebookDays(prebookDays).includes(isoWeekday(date));
 }
 
-const WEEKDAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+// ---------- Localized formatting ----------
+//
+// Formatting helpers take an optional UI locale ("pl" | "en"). When omitted,
+// client-side code falls back to the locale cookie (set by the language
+// switcher); on the server the app default (Polish) applies — server
+// components that render dates should pass the locale explicitly.
 
-export function weekdayShortName(isoDay: number): string {
-  return WEEKDAY_NAMES[isoDay - 1] ?? "?";
+type UiLocale = "pl" | "en";
+
+function currentUiLocale(): UiLocale {
+  if (typeof document !== "undefined") {
+    const match = document.cookie.match(/(?:^|;\s*)locale=(pl|en)\b/);
+    if (match) return match[1] as UiLocale;
+  }
+  return "pl";
 }
 
-/** "Mon, 14 Jul" — timezone-independent formatting of a Y-M-D string. */
-export function formatDateHuman(date: ISODate): string {
+function intlLocale(locale?: UiLocale): string {
+  return (locale ?? currentUiLocale()) === "pl" ? "pl-PL" : "en-GB";
+}
+
+const WEEKDAY_NAMES: Record<UiLocale, string[]> = {
+  en: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+  pl: ["Pn", "Wt", "Śr", "Cz", "Pt", "So", "Nd"],
+};
+
+export function weekdayShortName(isoDay: number, locale?: UiLocale): string {
+  return WEEKDAY_NAMES[locale ?? currentUiLocale()][isoDay - 1] ?? "?";
+}
+
+/** "Mon, 14 Jul" / "pon., 14 lip" — timezone-independent for a Y-M-D string. */
+export function formatDateHuman(date: ISODate, locale?: UiLocale): string {
   const dt = toUtcDate(date);
-  return dt.toLocaleDateString("en-GB", {
+  return dt.toLocaleDateString(intlLocale(locale), {
     weekday: "short",
     day: "numeric",
     month: "short",
@@ -154,10 +178,10 @@ export function formatDateHuman(date: ISODate): string {
   });
 }
 
-/** "Monday, 14 July 2026" */
-export function formatDateLong(date: ISODate): string {
+/** "Monday, 14 July 2026" / "poniedziałek, 14 lipca 2026" */
+export function formatDateLong(date: ISODate, locale?: UiLocale): string {
   const dt = toUtcDate(date);
-  return dt.toLocaleDateString("en-GB", {
+  return dt.toLocaleDateString(intlLocale(locale), {
     weekday: "long",
     day: "numeric",
     month: "long",
@@ -166,9 +190,19 @@ export function formatDateLong(date: ISODate): string {
   });
 }
 
-export function relativeDayLabel(date: ISODate, now: Date = new Date()): string {
+const RELATIVE_LABELS: Record<UiLocale, { today: string; tomorrow: string }> = {
+  en: { today: "Today", tomorrow: "Tomorrow" },
+  pl: { today: "Dziś", tomorrow: "Jutro" },
+};
+
+export function relativeDayLabel(
+  date: ISODate,
+  locale?: UiLocale,
+  now: Date = new Date()
+): string {
+  const labels = RELATIVE_LABELS[locale ?? currentUiLocale()];
   const today = todayInOfficeTz(now);
-  if (date === today) return "Today";
-  if (date === addDays(today, 1)) return "Tomorrow";
-  return formatDateHuman(date);
+  if (date === today) return labels.today;
+  if (date === addDays(today, 1)) return labels.tomorrow;
+  return formatDateHuman(date, locale);
 }

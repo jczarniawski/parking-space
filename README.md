@@ -41,6 +41,17 @@ Sign-in is restricted to `@match-trade.com` Google accounts.
   screens, and the same centered phone-width column even on desktop (admin
   pages stay wide for tables). Installable via Add to Home Screen.
 
+## Languages
+
+The employee-facing app is bilingual: **Polish is the default**, and every
+user can switch to English (and back) on the **Profile** page or on the login
+screen. The choice is stored per device in a `locale` cookie — no URL
+prefixes. API error messages are localized server-side from the same cookie.
+
+- Message catalog: `src/lib/i18n/messages.ts` (`en` defines the keys, `pl`
+  must cover them all — enforced by the type checker).
+- The admin panel (`/admin`) is intentionally English-only for now.
+
 ## Branding
 
 The whole UI derives from two Tailwind color scales in `tailwind.config.ts`:

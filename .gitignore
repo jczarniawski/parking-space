@@ -6,28 +6,15 @@
 /out/
 next-env.d.ts
 
-# production
-/build
+# testing
+/coverage
+
+# env — never commit real broker tokens
+.env
+.env.*
+!.env.example
 
 # misc
 .DS_Store
-*.pem
-
-# debug
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# env files
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-
-# database
-prisma/*.db
-prisma/*.db-journal
-
-# typescript
 *.tsbuildinfo
+/screenshots

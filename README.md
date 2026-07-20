@@ -1,232 +1,121 @@
-# MT Parking — office parking booking
+# MTR Predict — a Kalshi-style prediction market on the Match-Trader Broker API v2
 
-A small web app for booking office parking spots at Match-Trade. Employees
-quick-book a spot (auto-assigned) or pick one on the board for today or the
-next two business days; management members have personally reserved spots they
-can release for days they won't need them; admins configure everything and see
-the full history.
+A web app where you browse event markets (politics, sports, crypto, economics…),
+see live YES/NO prices in cents, and **trade directly from the page** — every
+order, position and settlement flows through the
+[Match-Trader Broker API v2](https://app.theneo.io/match-trade/broker-api-v2/introduction).
 
-Sign-in is restricted to `@match-trade.com` Google accounts.
+Built with Next.js 15 (App Router) + TypeScript + Tailwind. No database — the
+Broker API is the source of truth; the browser session is a signed cookie.
 
-## Features
+## What you can do
 
-- **Quick booking** — the central "+" button starts a 3-step wizard: pick a
-  zone, day and car, and the server auto-assigns the lowest free spot number.
-  No spot hunting needed.
-- **Parking zones** — spots can be grouped into zones (e.g. *Underground* /
-  *Ground level*). Everywhere spots are involved — quick booking and the
-  board — users pick a zone first; with no zones defined the pickers disappear
-  and all spots are shown together.
-- **Vehicles / plates** — every booking is tied to one of the user's saved
-  registration plates (up to 5, managed on the Profile page), so reception
-  always knows whose car is where. Booking flows include an inline "add plate"
-  input for first-time users.
-- **Availability board** — a per-day, per-zone grid of all active spots
-  showing who booked what, with one-tap booking and cancellation for people
-  who want a specific spot.
-- **Booking window** — today plus the next 2 business days; weekends are
-  never bookable. One spot per person per day, enforced by the database.
-- **Reserved (management) spots** — auto-prebooked for their owner on
-  configured weekdays. Owners can release a day (making the spot bookable by
-  anyone) up to 60 days ahead, and reclaim it while nobody has booked it.
-  Reserved spots render exactly like booked ones on the board — colleagues
-  just see the owner's name, no special "reserved" state to learn.
-- **Admin area** — first-run setup wizard (zones → spots per zone →
-  management assignments), zone management (add/rename/delete-when-empty),
-  spot management (zone assignment, activate/deactivate, owners and prebook
-  weekdays), user role management, all bookings with zone + plate columns,
-  filters and CSV export, and an audit log of every action.
-- **Mobile-app UI + PWA** — the app is designed as a phone screen first:
-  fixed bottom navigation with a central quick-book button, card-based
-  screens, and the same centered phone-width column even on desktop (admin
-  pages stay wide for tables). Installable via Add to Home Screen.
+- **Browse markets** — Bets from the Prediction Market endpoints, grouped by
+  category, with search, binary + multi-choice layouts, and Kalshi-style
+  `Yes 62¢ / No 39¢` buttons.
+- **Market pages** — probability chart (from `/v1/candles`), outcome list,
+  rules, and a trade ticket with cost / payout / potential-profit math
+  (PRED contracts price in 0..1 and settle at $1.00 / $0.00).
+- **Trade** — "Buy Yes" opens a `BUY` market position on the outcome's
+  `instrumentYesName`, "Buy No" on `instrumentNoName`
+  (`POST /v1/trading-accounts/positions/open`). Sell fully or partially from
+  the portfolio (`positions/close`, `positions/close-partially`).
+- **Portfolio** — equity/balance/open P&L/free margin, open positions with
+  live prices, and history including platform-settled positions.
+- **Onboarding** — create a demo account (user account + DEMO trading account
+  with an initial deposit) or attach an existing trading-account login.
+- **Live prices** — a single server-side gRPC quotations stream
+  (`getQuotationsWithMarkupStream`) feeds a shared quote cache; REST candles
+  are the automatic fallback. Cards/tickets poll the app's own `/api/quotes`.
 
-## Languages
-
-The employee-facing app is bilingual: **Polish is the default**, and every
-user can switch to English (and back) on the **Profile** page or on the login
-screen. The choice is stored per device in a `locale` cookie — no URL
-prefixes. API error messages are localized server-side from the same cookie.
-
-- Message catalog: `src/lib/i18n/messages.ts` (`en` defines the keys, `pl`
-  must cover them all — enforced by the type checker).
-- The admin panel (`/admin`) is intentionally English-only for now.
-
-## Branding
-
-The whole UI derives from two Tailwind color scales in `tailwind.config.ts`:
-`brand` (deep navy — headers, nav, primary surfaces) and `accent` (crimson —
-the FAB and primary actions). Swap those hex scales, plus the logo at
-`public/logo.svg` and the favicon/PWA icon at `src/app/icon.svg`, to rebrand
-the app.
-
-## Stack
-
-- [Next.js 15](https://nextjs.org/) (App Router, React 19, server components)
-- TypeScript (strict), Tailwind CSS v3
-- [next-auth v5](https://authjs.dev/) with Google sign-in (JWT sessions)
-- [Prisma](https://www.prisma.io/) + SQLite locally (PostgreSQL in production)
-- Vitest for unit tests
-
-## Local development
+## Quick start
 
 ```bash
-cp .env.example .env
-# 1. Generate a secret and put it in AUTH_SECRET:
-#    openssl rand -base64 32
-# 2. (Optional for a quick look) enable the dev login instead of Google:
-#    AUTH_DEV_LOGIN="true"
+npm install
 
-npm install        # also runs `prisma generate`
-npm run db:push    # create the SQLite database (prisma/dev.db)
-npm run dev        # http://localhost:3000
+# 1) No credentials? Run on built-in demo data (simulated markets + prices):
+npm run dev            # BROKER_MODE defaults to mock without a token
+
+# 2) Trade through the real Broker API:
+cp .env.example .env   # then set BROKER_API_TOKEN (+ BROKER_GROUP)
+npm run dev
 ```
 
-> **Upgrading from v1?** The schema changed (new `ParkingZone` and `Vehicle`
-> models plus zone/vehicle columns) — run `npm run db:push` again after
-> pulling. For a clean local start, delete `prisma/dev.db` first and let
-> `db:push` recreate it.
+Open http://localhost:3000. In mock mode you can attach the seeded demo
+account with login **820000**, or create a fresh one via *Sign up*.
 
-With `AUTH_DEV_LOGIN="true"` the login page shows an extra email field: enter
-any `@match-trade.com` address to sign in as that user without Google
-credentials. Never enable this in production.
+`npm test` runs the unit suite; `npm run typecheck` and `npm run build` for CI.
 
-Other scripts:
+## Environment
 
-```bash
-npm test            # vitest unit tests (dates + spot-spec parser, no DB needed)
-npm run typecheck   # tsc --noEmit
-npm run db:studio   # Prisma Studio to inspect the local database
-```
+| Variable | Default | Purpose |
+|---|---|---|
+| `BROKER_API_URL` | `https://broker-api-v2-demo.match-trader.com` | REST base URL (per-broker in production). |
+| `BROKER_API_TOKEN` | — | Bearer token from Match-Trade IT-Support. Empty → mock mode. |
+| `BROKER_GROUP` | `testUSD` | Group for new trading accounts + symbol lookups (must exist for your broker — see `GET /v1/group-names`). |
+| `BROKER_GRPC_HOST` | `grpc-broker-api-v2-demo.match-trader.com:8083` | gRPC quote stream; empty disables gRPC (REST fallback only). |
+| `BROKER_MODE` | auto | Force `live` or `mock`. |
+| `SESSION_SECRET` | dev fallback | HMAC key for session cookies — set a long random string. |
+| `DEMO_INITIAL_DEPOSIT` | `10000` | Deposit for new demo accounts; also caps top-ups. |
+| `DISABLE_DEPOSITS` | — | `true` hides/blocks the top-up endpoint. |
 
-## Google OAuth setup
+## How Kalshi concepts map to the Broker API
 
-1. In the [Google Cloud Console](https://console.cloud.google.com/), create
-   (or pick) a project and open **APIs & Services → OAuth consent screen**.
-   Choose the **Internal** user type — this restricts sign-in to accounts in
-   your Google Workspace organization at Google's side.
-2. Under **APIs & Services → Credentials**, create an **OAuth client ID** of
-   type **Web application**.
-3. Add the authorized redirect URI:
-   - local dev: `http://localhost:3000/api/auth/callback/google`
-   - production: `https://<your-domain>/api/auth/callback/google`
-4. Copy the client ID and secret into `.env` as `AUTH_GOOGLE_ID` and
-   `AUTH_GOOGLE_SECRET`.
+| In the UI | Broker API v2 |
+|---|---|
+| Event / market card | `GET /v1/bets` (+ `GET /v1/bets/{uuid}` for subtitle/close date) |
+| Outcomes with YES/NO prices | `GET /v1/bets/{uuid}/outcomes` → `instrumentYesName` / `instrumentNoName` (PRED instruments, prices 0..1) |
+| Price chart | `GET /v1/candles?symbol=<instrument>&interval=…` |
+| Live tickers | gRPC `QuotationsServiceExternal.getQuotationsWithMarkupStream` (fallback: latest M1 candle) |
+| Buy Yes / Buy No | `POST /v1/trading-accounts/positions/open` with `orderSide: BUY` on the YES/NO instrument |
+| Sell / partial sell | `POST /v1/trading-accounts/positions/close` / `…/close-partially` |
+| Positions & P&L | `POST /v1/trading-accounts/trading-data/open-positions` + quotes |
+| History & settlements | `POST /v1/trading-accounts/trading-data/closed-positions` (settlement closes at 1.00/0.00 are flagged) |
+| Balance / equity chip | `GET /v1/trading-accounts/{login}` (`financeInfo`) |
+| Sign up | `POST /v1/user-accounts` → `POST /v1/user-accounts/{uuid}/trading-accounts` (DEMO + `initialDeposit`) |
+| Top up demo funds | `POST /v1/trading-accounts/{login}/deposit` |
 
-Note: the app also enforces the email domain itself (`ALLOWED_EMAIL_DOMAIN`,
-default `match-trade.com`) in the sign-in callback, so even if the consent
-screen is external or the `hd` hint is bypassed, non-company accounts are
-rejected server-side.
+### API behaviours the app respects
 
-## First run
+- **Acks, not fills** — trade endpoints return an acknowledgement; the UI
+  refreshes positions/account state after every order instead of trusting the
+  200, and `partialResponses[].errorMessage` is checked on every bulk call.
+- **Non-idempotent balance ops** — deposits are sent exactly once, never
+  retried, and the button locks while in flight.
+- **Duplicate users return 409** — sign-up checks
+  `GET /v1/user-accounts/email/{email}` first and matches the
+  `error://broker-api/user-account/already-exists` type.
+- **Rate limits (500 req/min shared)** — server-side caches (bets 30 s,
+  outcomes 5 min, quotes via one gRPC stream with bounded REST fallback +
+  per-symbol cooldowns) keep upstream traffic small no matter how many
+  browsers are open.
+- **Closed positions carry no login** — history is always queried per login.
+- **Prediction Market endpoints need a dedicated API permission** — a JSON
+  `403` from the API is surfaced with that hint.
 
-1. The **first user ever to sign in becomes an ADMIN** (additionally, any
-   email listed in `ADMIN_EMAILS` is promoted to admin on sign-in).
-2. While no parking spots exist, admins landing on the app are redirected to
-   **/admin/setup**, a 3-step wizard:
-   1. **Zones** — optionally add parking zones (prefilled suggestions:
-      *Underground*, *Ground level*). Skip if the office has one lot.
-   2. **Spots** — enter spot numbers (e.g. `1-24` or `1-10, 12, A1`) and the
-      zone they belong to; repeat per zone (e.g. `1-10` → Underground, then
-      `11-20` → Ground level).
-   3. **Management** — optionally assign reserved spots to management members
-      by email and pick their prebook weekdays.
-3. Done — everyone else who signs in adds a plate and can book right away.
-
-## Roles
-
-| Role         | What they can do                                                                                    |
-| ------------ | --------------------------------------------------------------------------------------------------- |
-| `EMPLOYEE`   | Book a free spot within the window (quick-book or via the board), cancel their own upcoming bookings. |
-| `MANAGEMENT` | Everything an employee can, plus a personally reserved spot: release it for specific days, reclaim it while unbooked. |
-| `ADMIN`      | Everything above, plus zone/spot/user administration, all bookings + CSV export, audit log.          |
-
-Roles are managed in **Admin → Users**. Assigning a reserved spot to an
-employee automatically promotes them to `MANAGEMENT`; owners assigned by
-email before their first sign-in are pre-provisioned and linked when they
-first log in.
-
-## Booking rules
-
-- Bookable days: **today + the next 2 business days**; weekends never.
-  (E.g. on Friday you can book Friday, Monday and Tuesday; on Saturday only
-  Monday and Tuesday.) "Today" rolls over at midnight in the office timezone
-  (`OFFICE_TIMEZONE`, default `Europe/Warsaw`).
-- **Every booking needs a vehicle** — one of the user's saved plates is
-  attached to the booking (and kept as a snapshot even if the vehicle is
-  later deleted).
-- **Quick booking auto-assigns** the lowest free spot number in the chosen
-  zone; if the zone is full the user is pointed at other zones or the board.
-- **One spot per person per day** and one booking per spot per day — enforced
-  by database unique constraints, so races resolve safely.
-- Bookings can be cancelled by their owner (or an admin) up to and including
-  the booked day; past bookings are kept as history.
-- Reserved spots show their owner's name on the board on prebook weekdays,
-  exactly like booked spots, and can't be booked unless the owner has
-  released that day. Owners release up to 60 days ahead and can reclaim a
-  released day only while nobody has booked it. Owners with an active
-  reservation that day must release it before booking a different spot.
-- Every create/cancel/release/reclaim and all admin actions are written to
-  the audit log.
-
-## Mobile / PWA
-
-The app ships a web manifest (`MT Parking`, standalone display, navy theme)
-and a phone-first layout: fixed bottom navigation (Start · Bookings · quick
-book · Board · Profile) tested down to 375 px wide. Open the site on your
-phone and use **Add to Home Screen** (iOS Safari share menu, or the install
-prompt in Chrome on Android) to get an app-like, full-screen experience.
-
-## Production notes
-
-1. Switch the datasource provider in `prisma/schema.prisma` from `sqlite` to
-   `postgresql` (the schema is compatible) and point `DATABASE_URL` at your
-   database, then run `npm run db:push` (or set up Prisma migrations) against
-   it.
-2. Set the environment variables: `DATABASE_URL`, `AUTH_SECRET`,
-   `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`, `ALLOWED_EMAIL_DOMAIN`,
-   `OFFICE_TIMEZONE`, optionally `ADMIN_EMAILS`, and `AUTH_URL` set to your
-   canonical `https://` origin when running behind a proxy. Make sure
-   `AUTH_DEV_LOGIN` is unset or `"false"`.
-3. Build and run:
-
-   ```bash
-   npm run build   # runs prisma generate + next build
-   npm start
-   ```
-
-## Project structure
+## Architecture
 
 ```
-parking-space/
-├── prisma/
-│   └── schema.prisma            # User, ParkingZone, Vehicle, ParkingSpot,
-│                                #   Booking, SpotRelease, AuditLog
-├── public/logo.svg              # brand logo (navy square, white M, red dot)
-├── src/
-│   ├── app/
-│   │   ├── page.tsx             # Start screen: hero + upcoming booking cards
-│   │   ├── book/                # quick-booking wizard (zone → auto-assign)
-│   │   ├── board/               # per-day / per-zone availability board
-│   │   ├── my-bookings/         # upcoming + past bookings, releases panel
-│   │   ├── profile/             # user card, vehicles, admin link, sign out
-│   │   ├── login/               # Google (and optional dev) sign-in
-│   │   ├── admin/               # overview, spots+zones, users, bookings, audit, setup
-│   │   ├── api/                 # home, availability, bookings, releases,
-│   │   │                        #   zones, vehicles, admin/*, auth
-│   │   ├── icon.svg             # PWA / favicon icon
-│   │   └── manifest.ts          # PWA manifest
-│   ├── components/              # bottom-nav, start-screen, quick-book-wizard,
-│   │   │                        #   booking-board, vehicles-manager, admin/*, ui
-│   ├── lib/
-│   │   ├── dates.ts             # business-day / booking-window logic (pure)
-│   │   ├── spot-spec.ts         # "1-10, 12, A1" spot-spec parser (pure)
-│   │   ├── errors.ts            # typed ApiError + helpers
-│   │   ├── db.ts                # Prisma client singleton
-│   │   ├── audit.ts             # audit-log writer
-│   │   └── services/            # bookings, spots, zones, vehicles, admin
-│   ├── auth.ts                  # next-auth v5 config (domain guard, roles)
-│   └── lib/__tests__/           # vitest unit tests (no database required)
-├── vitest.config.ts
-└── tailwind.config.ts           # `brand` navy + `accent` crimson scales
+src/lib/broker/types.ts    Broker API payload types + BrokerClient interface
+src/lib/broker/http.ts     REST client (Bearer auth, error model, pagination)
+src/lib/broker/mock.ts     Full in-memory simulator (markets, random-walk
+                           prices, margin/P&L semantics) — powers mock mode & tests
+src/lib/broker/grpc-quotes.ts  gRPC quote stream (reconnect, heartbeat watchdog)
+src/lib/quotes.ts          Shared quote cache: gRPC push, REST fallback
+src/lib/markets.ts         Bets+outcomes+quotes → UI views; symbol→market index
+src/lib/portfolio.ts       Positions enriched with market refs and live P&L
+src/lib/session.ts         Stateless HMAC-signed cookie sessions
+src/app/api/*              Route handlers the UI talks to (the token never
+                           leaves the server)
+src/app/*, src/components/*  Kalshi-style UI (home grid, market page, portfolio)
+proto/broker_api_v2.proto  Vendored gRPC contract (from the Broker-API skill)
 ```
+
+## ⚠️ Demo scope
+
+The Broker API is an **administrative** API: one broker-level token, no
+end-user password verification. "Attach existing login" therefore trusts the
+login you type, and sign-up performs admin-side account creation. That's fine
+for an integration demo on the shared sandbox (`brokerID=0`) — put a real
+identity layer (and your own accounts directory) in front before exposing this
+to actual clients. Not investment advice; demo only.

@@ -1,45 +1,44 @@
 import type { Config } from "tailwindcss";
 
-// Match-Trade Technologies inspired palette.
-// `brand`  – deep corporate navy (headers, nav, primary surfaces)
-// `accent` – crimson red (primary actions, FAB, highlights)
-// If you have the exact brand hex values, swap them here — the whole UI
-// derives from these two scales.
 const config: Config = {
   content: ["./src/**/*.{ts,tsx}"],
   theme: {
     extend: {
       colors: {
-        brand: {
-          50: "#f2f5fa",
-          100: "#e2e9f3",
-          200: "#c6d4e8",
-          300: "#9db4d5",
-          400: "#6d8ebd",
-          500: "#4b70a6",
-          600: "#39588b",
-          700: "#2f4771",
-          800: "#2a3d5e",
-          900: "#1c2a44",
-          950: "#0e1830",
+        ink: "#0f1a2a",
+        canvas: "#f7f8fa",
+        line: "#e7eaf0",
+        yes: {
+          DEFAULT: "#059669",
+          strong: "#047857",
+          soft: "#e8f7f0",
+          softer: "#f2fbf7",
         },
-        accent: {
-          50: "#fef2f3",
-          100: "#fde3e6",
-          200: "#fbccd2",
-          300: "#f7a3ae",
-          400: "#f27083",
-          500: "#e8405c",
-          600: "#d42045",
-          700: "#b21539",
-          800: "#951437",
-          900: "#801535",
-          950: "#470618",
+        no: {
+          DEFAULT: "#e11d48",
+          strong: "#be123c",
+          soft: "#fdeef2",
+          softer: "#fef6f8",
+        },
+        brand: {
+          DEFAULT: "#0a6e54",
+          dark: "#08523f",
         },
       },
       boxShadow: {
-        card: "0 1px 3px 0 rgb(15 24 48 / 0.08), 0 1px 2px -1px rgb(15 24 48 / 0.08)",
-        fab: "0 8px 20px -6px rgb(212 32 69 / 0.5)",
+        card: "0 1px 2px rgba(15,26,42,0.05)",
+        pop: "0 8px 30px rgba(15,26,42,0.12)",
+      },
+      fontFamily: {
+        sans: [
+          "-apple-system",
+          "BlinkMacSystemFont",
+          "Segoe UI",
+          "Roboto",
+          "Helvetica Neue",
+          "Arial",
+          "sans-serif",
+        ],
       },
     },
   },

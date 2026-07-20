@@ -2,20 +2,23 @@
 @tailwind components;
 @tailwind utilities;
 
-@layer base {
-  html {
-    -webkit-tap-highlight-color: transparent;
-  }
+:root {
+  color-scheme: light;
+}
 
-  body {
-    @apply bg-slate-50 text-slate-900 antialiased;
-  }
+body {
+  @apply bg-canvas text-ink antialiased;
 }
 
 @layer utilities {
-  /* Extra bottom padding for devices with a home-indicator / notch area,
-     used by the fixed bottom navigation bar. */
-  .pb-safe {
-    padding-bottom: env(safe-area-inset-bottom);
+  .scrollbar-none {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
   }
 }

@@ -1,60 +1,50 @@
-import { NextResponse } from "next/server";
-import { auth } from "@/auth";
-import { ApiError, unauthorized, forbidden } from "@/lib/errors";
-import { apiErrorMessage } from "@/lib/i18n";
-import { getLocale } from "@/lib/i18n/server";
+import { NextRequest, NextResponse } from "next/server";
+import { isBrokerApiError } from "@/lib/broker/errors";
+import { SESSION_COOKIE, verifySessionToken, type Session } from "@/lib/session";
 
-export type SessionUser = {
-  id: string;
-  email: string;
-  name: string | null;
-  role: string;
-};
-
-export async function requireUser(): Promise<SessionUser> {
-  const session = await auth();
-  const u = session?.user;
-  if (!u?.id || !u.email) throw unauthorized();
-  return { id: u.id, email: u.email, name: u.name ?? null, role: u.role };
+export function readSession(req: NextRequest): Session | null {
+  return verifySessionToken(req.cookies.get(SESSION_COOKIE)?.value);
 }
 
-export async function requireAdmin(): Promise<SessionUser> {
-  const user = await requireUser();
-  if (user.role !== "ADMIN") throw forbidden("Admin access required.");
-  return user;
+export function requireSession(req: NextRequest): Session {
+  const session = readSession(req);
+  if (!session) throw new HttpError(401, "Sign in to trade.", "unauthenticated");
+  return session;
 }
 
-/** Wrap a route handler so thrown ApiErrors become clean JSON responses. */
-export function handleApi<Args extends unknown[]>(
-  fn: (...args: Args) => Promise<Response>
-): (...args: Args) => Promise<Response> {
-  return async (...args: Args) => {
-    try {
-      return await fn(...args);
-    } catch (err) {
-      // Errors are localized here (from the request's locale cookie) so every
-      // screen shows them in the user's language; the service-layer English
-      // message is the fallback for codes without a translation.
-      const locale = await getLocale().catch(() => "pl" as const);
-      if (err instanceof ApiError) {
-        return NextResponse.json(
-          {
-            error: apiErrorMessage(locale, err.code, err.params) ?? err.message,
-            code: err.code,
-          },
-          { status: err.status }
-        );
-      }
-      console.error("Unhandled API error:", err);
-      return NextResponse.json(
-        {
-          error:
-            apiErrorMessage(locale, "INTERNAL") ??
-            "Something went wrong. Please try again.",
-          code: "INTERNAL",
-        },
-        { status: 500 }
-      );
-    }
-  };
+export class HttpError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+    readonly code?: string,
+  ) {
+    super(message);
+    this.name = "HttpError";
+  }
+}
+
+export function jsonError(status: number, message: string, code?: string): NextResponse {
+  return NextResponse.json({ error: message, code }, { status });
+}
+
+/**
+ * Uniform error mapping for route handlers. Broker auth failures are the
+ * server's token problem, not the visitor's — surface them as 502.
+ */
+export function toErrorResponse(e: unknown): NextResponse {
+  if (e instanceof HttpError) return jsonError(e.status, e.message, e.code);
+  if (isBrokerApiError(e)) {
+    const status = e.isAuth || e.isPermission ? 502 : e.status >= 500 ? 502 : e.status;
+    return jsonError(status, e.userMessage, e.errorType);
+  }
+  console.error("[api] unexpected error:", e);
+  return jsonError(500, "Something went wrong. Please try again.");
+}
+
+export async function parseBody<T>(req: NextRequest): Promise<Partial<T>> {
+  try {
+    return (await req.json()) as Partial<T>;
+  } catch {
+    throw new HttpError(400, "Invalid JSON body.");
+  }
 }
